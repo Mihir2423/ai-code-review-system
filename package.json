@@ -1,0 +1,19 @@
+{
+  "name": "ai-code-review-system",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev --output-logs=full",
+    "build": "turbo run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.17.1",
+  "devDependencies": {
+    "turbo": "^2.8.14",
+    "typescript": "^5.9.3"
+  }
+}
