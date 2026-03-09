@@ -44,3 +44,69 @@ You can develop a specific package by using a filter:
 pnpm dev --filter=web
 pnpm dev --filter=ai-review-worker
 ```
+
+```
+flowchart TD
+
+    %% ---------- Frontend ----------
+    A[User] --> B[apps/web Next.js Frontend]
+
+    B --> C[Connect GitHub Repository]
+
+    %% ---------- Repo Setup ----------
+    C --> D[services/repo-indexer]
+
+    D --> E[Clone Repository]
+    E --> F[Chunk Code Files]
+    F --> G[Generate Embeddings using packages/ai]
+    G --> H[Pinecone Vector Database]
+
+    C --> I[Attach GitHub Webhook]
+    I --> J[GitHub Repository]
+
+    %% ---------- PR Event ----------
+    J --> K[User Creates Pull Request]
+
+    K --> L[services/webhook-service]
+
+    L --> M[Kafka Topic: pr-events]
+
+    %% ---------- PR Processing ----------
+    M --> N[services/pr-processor]
+
+    N --> O[Fetch PR Diff from GitHub API]
+
+    O --> P[Kafka Topic: review-jobs]
+
+    %% ---------- AI Review ----------
+    P --> Q[services/ai-review-worker]
+
+    Q --> R[Retrieve Context from Pinecone]
+
+    R --> S[Gemini Review via packages/ai]
+
+    S --> T[Kafka Topic: review-results]
+
+    %% ---------- Comment Posting ----------
+    T --> U[services/github-comment-service]
+
+    U --> V[Post Comment on GitHub PR]
+
+
+    %% ---------- Shared Packages ----------
+    subgraph Shared_Packages
+        W[packages/ai]
+        X[packages/kafka]
+        Y[packages/redis]
+        Z[packages/logger]
+        AA[packages/config]
+        AB[packages/types]
+    end
+
+    %% ---------- Infra ----------
+    subgraph Infrastructure
+        AC[Kafka]
+        AD[Redis]
+        AE[Pinecone]
+    end
+```
