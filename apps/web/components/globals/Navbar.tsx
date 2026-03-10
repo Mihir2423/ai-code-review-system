@@ -14,16 +14,10 @@ import {
     Sun,
 } from 'lucide-react';
 
-interface NavbarProps {
-    dropdownOpen: boolean;
-    setDropdownOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    theme: string;
-    setTheme: React.Dispatch<React.SetStateAction<string>>;
-    sidebarOpen: boolean;
-    setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}
+import { useUIStore } from '@/lib/store/ui-store';
 
-export function Navbar({ dropdownOpen, setDropdownOpen, theme, setTheme, sidebarOpen, setSidebarOpen }: NavbarProps) {
+export function Navbar() {
+    const { dropdownOpen, setDropdownOpen, theme, setTheme, toggleSidebar } = useUIStore();
     return (
         <header
             className="flex items-center justify-between px-4 shrink-0"
@@ -37,7 +31,7 @@ export function Navbar({ dropdownOpen, setDropdownOpen, theme, setTheme, sidebar
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        setSidebarOpen((prev) => !prev);
+                        toggleSidebar();
                     }}
                     type="button"
                     className="flex items-center justify-center rounded"
@@ -96,7 +90,7 @@ export function Navbar({ dropdownOpen, setDropdownOpen, theme, setTheme, sidebar
                     }}
                     onClick={(e) => {
                         e.stopPropagation();
-                        setDropdownOpen((prev) => !prev);
+                        setDropdownOpen(!dropdownOpen);
                     }}
                 >
                     <div

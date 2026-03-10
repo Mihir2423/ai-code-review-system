@@ -13,6 +13,8 @@ import {
     Zap,
 } from 'lucide-react';
 
+import { useUIStore } from '@/lib/store/ui-store';
+
 const navItems = [
     { icon: GitBranch, label: 'Repositories', active: true },
     { icon: LayoutDashboard, label: 'Dashboard' },
@@ -24,12 +26,10 @@ const navItems = [
     { icon: UserCog, label: 'Account Settings' },
 ];
 
-interface SidebarProps {
-    isOpen: boolean;
-}
+export function Sidebar() {
+    const { sidebarOpen } = useUIStore();
 
-export function Sidebar({ isOpen }: SidebarProps) {
-    if (!isOpen) return null;
+    if (!sidebarOpen) return null;
 
     return (
         <aside
