@@ -10,12 +10,14 @@ import {
 	PanelLeft,
 	Search,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { useUIStore } from "@/lib/store/ui-store";
 
 export function Navbar() {
 	const { dropdownOpen, setDropdownOpen, toggleSidebar } = useUIStore();
 	const { data: session } = authClient.useSession();
+	const router = useRouter();
 	const user = session?.user;
 	return (
 		<header
@@ -194,6 +196,7 @@ export function Navbar() {
 							}}
 							onClick={() => {
 								authClient.signOut();
+								router.push("/");
 								setDropdownOpen(false);
 							}}
 							onMouseEnter={(e) =>
