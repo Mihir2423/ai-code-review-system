@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
 import { useUIStore } from "@/lib/store/ui-store";
 
 const navItems = [
@@ -35,7 +36,8 @@ const navItems = [
 export function Sidebar() {
 	const { sidebarOpen } = useUIStore();
 	const pathname = usePathname();
-
+	const { data: session } = authClient.useSession();
+	const user = session?.user;
 	if (!sidebarOpen) return null;
 
 	return (
@@ -70,7 +72,7 @@ export function Sidebar() {
 					className="flex-1 text-sm font-semibold"
 					style={{ color: "#e8e8ea" }}
 				>
-					Mihir2423
+					{user?.name}
 				</span>
 				<span
 					className="text-xs font-semibold px-1.5 py-0.5 rounded"
