@@ -58,6 +58,7 @@ export function DashboardContent() {
 							cursor: "pointer",
 							color: "#808088",
 						}}
+						type="button"
 					>
 						Repository
 						<ArrowUpDown size={12} color="#505058" />
