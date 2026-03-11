@@ -11,7 +11,7 @@ export default function Home() {
 				</p>
 				<a
 					className="flex py-2 items-center justify-center bg-black px-8 text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-					href="/dashboard"
+					href="/repositories"
 				>
 					Get Started
 				</a>
