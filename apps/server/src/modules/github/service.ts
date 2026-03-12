@@ -81,8 +81,8 @@ export async function connectRepository(userId: string, owner: string, repo: str
         owner,
         repo,
         url: repository.url,
+        userId,
     });
-
 
     return repository;
 }

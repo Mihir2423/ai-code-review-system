@@ -20,11 +20,17 @@
         "typescript": "^5.9.3"
     },
     "dependencies": {
+        "@ai-sdk/google": "^3.0.43",
+        "@pinecone-database/pinecone": "^7.1.0",
         "@repo/ai": "workspace:*",
+        "@repo/db": "workspace:*",
         "@repo/kafka": "workspace:*",
         "@repo/logger": "workspace:*",
+        "ai": "^6.0.116",
+        "dotenv": "^16.4.7",
         "fs-extra": "^11.3.4",
         "glob": "^13.0.6",
+        "octokit": "^5.0.5",
         "simple-git": "^3.32.3"
     }
 }

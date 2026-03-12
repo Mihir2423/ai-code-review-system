@@ -332,21 +332,39 @@ importers:
 
   services/repo-indexer:
     dependencies:
+      '@ai-sdk/google':
+        specifier: ^3.0.43
+        version: 3.0.43(zod@4.3.6)
+      '@pinecone-database/pinecone':
+        specifier: ^7.1.0
+        version: 7.1.0
       '@repo/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@repo/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@repo/kafka':
         specifier: workspace:*
         version: link:../../packages/kafka
       '@repo/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      ai:
+        specifier: ^6.0.116
+        version: 6.0.116(zod@4.3.6)
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       fs-extra:
         specifier: ^11.3.4
         version: 11.3.4
       glob:
         specifier: ^13.0.6
         version: 13.0.6
+      octokit:
+        specifier: ^5.0.5
+        version: 5.0.5
       simple-git:
         specifier: ^3.32.3
         version: 3.32.3
@@ -1410,6 +1428,10 @@ packages:
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
     engines: {node: '>=8.0.0'}
+
+  '@pinecone-database/pinecone@7.1.0':
+    resolution: {integrity: sha512-w6HoBCriv4NKOVFjdj4/KuJ6df7RZpQEsZ61VctRzoauTXQpe8wpccsS94AawxAxMOu7hOTXVlcQ5QLHYKjrDA==}
+    engines: {node: '>=20.0.0'}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -5753,6 +5775,8 @@ snapshots:
   '@open-draft/until@2.1.0': {}
 
   '@opentelemetry/api@1.9.0': {}
+
+  '@pinecone-database/pinecone@7.1.0': {}
 
   '@pinojs/redact@0.4.0': {}
 
