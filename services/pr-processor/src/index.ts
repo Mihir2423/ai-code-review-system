@@ -6,12 +6,18 @@ import { Octokit } from 'octokit';
 
 const TOPIC = 'pr.review';
 const COMMENT_TOPIC = 'pr.comment';
+const CONTEXT_TOPIC = 'pr.context';
 
 interface PRReviewMessage {
     owner: string;
     repo: string;
     prNumber: number;
     userId: string;
+}
+
+interface PRDetails {
+    prTitle: string;
+    prBody: string;
 }
 
 async function getAccessToken(userId: string): Promise<string | null> {
@@ -27,7 +33,12 @@ async function getAccessToken(userId: string): Promise<string | null> {
     }
 }
 
-async function reviewPullRequest(owner: string, repo: string, prNumber: number, accessToken: string): Promise<void> {
+async function reviewPullRequest(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    accessToken: string,
+): Promise<PRDetails> {
     const octokit = new Octokit({ auth: accessToken });
 
     const { data: pr } = await octokit.rest.pulls.get({
@@ -49,6 +60,11 @@ async function reviewPullRequest(owner: string, repo: string, prNumber: number, 
 
     logger.info({ prNumber }, 'Pull request diff retrieved');
     logger.info({ diff }, 'Pull request diff content');
+
+    return {
+        prTitle: pr.title,
+        prBody: pr.body || '',
+    };
 }
 
 async function startConsumer(): Promise<void> {
@@ -81,7 +97,26 @@ async function startConsumer(): Promise<void> {
             }
 
             try {
-                await reviewPullRequest(owner, repo, prNumber, accessToken);
+                const prDetails = await reviewPullRequest(owner, repo, prNumber, accessToken);
+
+                const query = `${prDetails.prTitle}\n${prDetails.prBody}`;
+                logger.info({ query }, 'Generated query for context retrieval');
+
+                const repository = await prisma.repository.findFirst({
+                    where: { owner, name: repo, userId },
+                });
+
+                if (repository) {
+                    await sendMessage(CONTEXT_TOPIC, {
+                        query,
+                        repoId: repository.id,
+                        owner,
+                        repo,
+                        prNumber,
+                        userId,
+                    });
+                    logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to Kafka');
+                }
 
                 await sendMessage(COMMENT_TOPIC, {
                     owner,
@@ -141,7 +176,7 @@ async function startConsumer(): Promise<void> {
 
 async function main(): Promise<void> {
     logger.info('PR Processor service started');
-    await ensureTopics([TOPIC, COMMENT_TOPIC]);
+    await ensureTopics([TOPIC, COMMENT_TOPIC, CONTEXT_TOPIC]);
     await startConsumer();
 }
 
