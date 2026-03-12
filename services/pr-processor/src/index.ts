@@ -1,10 +1,11 @@
 import 'dotenv/config';
 import prisma from '@repo/db';
-import { ensureTopics, kafka } from '@repo/kafka';
+import { ensureTopics, kafka, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { Octokit } from 'octokit';
 
 const TOPIC = 'pr.review';
+const COMMENT_TOPIC = 'pr.comment';
 
 interface PRReviewMessage {
     owner: string;
@@ -81,6 +82,27 @@ async function startConsumer(): Promise<void> {
 
             try {
                 await reviewPullRequest(owner, repo, prNumber, accessToken);
+
+                await sendMessage(COMMENT_TOPIC, {
+                    owner,
+                    repo,
+                    prNumber,
+                    userId,
+                    comment: `> [!NOTE]
+> Currently processing new changes in this PR. This may take a few minutes, please wait...
+> 
+> \`\`\`ascii
+>  ________________________________
+> < Overly attached code reviewer. >
+>  --------------------------------
+>   \\\\
+>     \\\\   (\\__/)
+>         (•ㅅ•)
+>         /　 づ
+> \`\`\``,
+                });
+
+                logger.info({ owner, repo, prNumber }, 'Sent initial comment message to Kafka');
             } catch (error) {
                 logger.error({ error, owner, repo, prNumber }, 'Failed to review pull request');
 
@@ -119,7 +141,7 @@ async function startConsumer(): Promise<void> {
 
 async function main(): Promise<void> {
     logger.info('PR Processor service started');
-    await ensureTopics([TOPIC]);
+    await ensureTopics([TOPIC, COMMENT_TOPIC]);
     await startConsumer();
 }
 
