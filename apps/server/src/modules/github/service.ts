@@ -1,8 +1,17 @@
 import prisma from '@repo/db';
+import { redis } from '@repo/redis';
 import type { GitHubStats } from '@repo/types';
 import { Octokit } from 'octokit';
 
+const STATS_CACHE_TTL = 30 * 60;
+
 export async function getGitHubStats(userId: string): Promise<GitHubStats> {
+    const cacheKey = `github:stats:${userId}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+        return JSON.parse(cached);
+    }
+
     const account = await prisma.account.findFirst({
         where: { userId, providerId: 'github' },
         select: { accessToken: true },
@@ -97,7 +106,7 @@ export async function getGitHubStats(userId: string): Promise<GitHubStats> {
         }
     });
 
-    return {
+    const stats: GitHubStats = {
         repos: {
             total: totalRepos,
             thisMonth: reposThisMonth,
@@ -113,4 +122,8 @@ export async function getGitHubStats(userId: string): Promise<GitHubStats> {
                 .sort((a, b) => a.month.localeCompare(b.month)),
         },
     };
+
+    await redis.setex(cacheKey, STATS_CACHE_TTL, JSON.stringify(stats));
+
+    return stats;
 }

@@ -14,6 +14,7 @@
     "dependencies": {
         "@repo/db": "workspace:*",
         "@repo/logger": "workspace:*",
+        "@repo/redis": "workspace:*",
         "@repo/types": "workspace:*",
         "better-auth": "^1.4.3",
         "cors": "^2.8.6",
