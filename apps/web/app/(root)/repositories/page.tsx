@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { DashboardContent } from '@/app/(root)/dashboard/_components/dashboard-content';
+import { DashboardContent } from '@/app/(root)/repositories/_component/dashboard-content';
 import { auth } from '@/lib/auth';
 
 export default async function App() {

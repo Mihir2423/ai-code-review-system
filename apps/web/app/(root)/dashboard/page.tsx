@@ -43,7 +43,6 @@ export default function DashboardPage() {
         queryKey: ['github-stats'],
         queryFn: fetchGitHubStats,
     });
-    console.log(data);
 
     const stats = data ? transformGitHubStatsToStats(data?.content) : [];
 
