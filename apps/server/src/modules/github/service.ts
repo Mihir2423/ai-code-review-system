@@ -1,9 +1,10 @@
 import prisma from '@repo/db';
 import { redis } from '@repo/redis';
-import type { GitHubStats } from '@repo/types';
+import type { GitHubRepository, GitHubStats } from '@repo/types';
 import { Octokit } from 'octokit';
 
 const STATS_CACHE_TTL = 30 * 60;
+const REPOS_CACHE_TTL = 15 * 60;
 
 export async function getGitHubStats(userId: string): Promise<GitHubStats> {
     const cacheKey = `github:stats:${userId}`;
@@ -126,4 +127,98 @@ export async function getGitHubStats(userId: string): Promise<GitHubStats> {
     await redis.setex(cacheKey, STATS_CACHE_TTL, JSON.stringify(stats));
 
     return stats;
+}
+
+export async function getAllRepositories(userId: string): Promise<GitHubRepository[]> {
+    const cacheKey = `github:repositories:${userId}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+        return JSON.parse(cached);
+    }
+
+    const account = await prisma.account.findFirst({
+        where: { userId, providerId: 'github' },
+        select: { accessToken: true },
+    });
+
+    if (!account?.accessToken) {
+        throw new Error('GitHub account not connected');
+    }
+
+    const octokit = new Octokit({ auth: account.accessToken });
+
+    const { viewer } = await octokit.graphql<{ viewer: { login: string } }>(`{ viewer { login } }`);
+
+    const data = await octokit.graphql<{
+        user: {
+            repositories: {
+                nodes: {
+                    id: string;
+                    name: string;
+                    nameWithOwner: string;
+                    description: string | null;
+                    isPrivate: boolean;
+                    url: string;
+                    primaryLanguage: { name: string } | null;
+                    stargazerCount: number;
+                    forkCount: number;
+                    issues: { totalCount: number };
+                    watchers: { totalCount: number };
+                    defaultBranchRef: { name: string } | null;
+                    createdAt: string;
+                    updatedAt: string;
+                    pushedAt: string | null;
+                }[];
+                pageInfo: { hasNextPage: boolean; endCursor: string };
+            };
+        };
+    }>(
+        `query ($login: String!, $cursor: String) {
+            user(login: $login) {
+                repositories(first: 100, orderBy: {field: PUSHED_AT, direction: DESC}, after: $cursor) {
+                    nodes {
+                        id
+                        name
+                        nameWithOwner
+                        description
+                        isPrivate
+                        url
+                        primaryLanguage { name }
+                        stargazerCount
+                        forkCount
+                        issues { totalCount }
+                        watchers { totalCount }
+                        defaultBranchRef { name }
+                        createdAt
+                        updatedAt
+                        pushedAt
+                    }
+                    pageInfo { hasNextPage endCursor }
+                }
+            }
+        }`,
+        { login: viewer.login },
+    );
+
+    const repositories: GitHubRepository[] = data.user.repositories.nodes.map((repo) => ({
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.nameWithOwner,
+        description: repo.description,
+        private: repo.isPrivate,
+        htmlUrl: repo.url,
+        language: repo.primaryLanguage?.name ?? null,
+        stargazersCount: repo.stargazerCount,
+        forksCount: repo.forkCount,
+        openIssuesCount: repo.issues.totalCount,
+        watchersCount: repo.watchers.totalCount,
+        defaultBranch: repo.defaultBranchRef?.name ?? 'main',
+        createdAt: repo.createdAt,
+        updatedAt: repo.updatedAt,
+        pushedAt: repo.pushedAt,
+    }));
+
+    await redis.setex(cacheKey, REPOS_CACHE_TTL, JSON.stringify(repositories));
+
+    return repositories;
 }

@@ -18,7 +18,7 @@ export async function fetchGitHubStats(): Promise<GithubStatsReponse> {
 
     const response = await fetch(`${API_BASE_URL}/api/github/stats`, {
         headers: {
-            Authorization: `Bearer ${(session as any).session?.token}`,
+            Authorization: `Bearer ${(session).session?.token}`,
         },
         credentials: 'include',
     });
