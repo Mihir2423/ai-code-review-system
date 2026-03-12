@@ -1,9 +1,92 @@
 import prisma from '@repo/db';
 import { redis } from '@repo/redis';
-import type { GitHubStats } from '@repo/types';
+import type { GitHubRepository, GitHubStats } from '@repo/types';
 import { Octokit } from 'octokit';
 
 const STATS_CACHE_TTL = 30 * 60;
+const REPOS_CACHE_TTL = 15 * 60;
+
+const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:3000';
+const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || 'development-secret';
+
+type Webhook = Awaited<ReturnType<Octokit['rest']['repos']['createWebhook']>>['data'];
+
+export async function createWebhook(userId: string, owner: string, repo: string): Promise<Webhook> {
+    const account = await prisma.account.findFirst({
+        where: { userId, providerId: 'github' },
+        select: { accessToken: true },
+    });
+
+    if (!account?.accessToken) {
+        throw new Error('GitHub account not connected');
+    }
+
+    const octokit = new Octokit({ auth: account.accessToken });
+
+    console.log('before');
+    const existingWebhooks = await octokit.rest.repos.listWebhooks({
+        owner,
+        repo,
+    });
+
+    console.log('existing');
+
+    const webhookUrl = `${PUBLIC_URL}/api/webhooks/github`;
+    const existingWebhook = existingWebhooks.data.find((hook) => hook.config.url === webhookUrl);
+
+    if (existingWebhook) {
+        return existingWebhook;
+    }
+
+    const webhook = await octokit.rest.repos.createWebhook({
+        owner,
+        repo,
+        config: {
+            url: webhookUrl,
+            content_type: 'json',
+            secret: WEBHOOK_SECRET,
+        },
+        events: ['pull_request'],
+        active: true,
+    });
+
+    return webhook.data;
+}
+
+export async function connectRepository(userId: string, owner: string, repo: string) {
+    const account = await prisma.account.findFirst({
+        where: { userId, providerId: 'github' },
+        select: { accessToken: true },
+    });
+
+    if (!account?.accessToken) {
+        throw new Error('GitHub account not connected');
+    }
+
+    const webhook = await createWebhook(userId, owner, repo);
+
+    const repository = await prisma.repository.create({
+        data: {
+            githubId: String(webhook.id),
+            name: repo,
+            owner,
+            fullName: `${owner}/${repo}`,
+            url: `https://github.com/${owner}/${repo}/`,
+            userId,
+        },
+    });
+
+    return repository;
+}
+
+export async function getConnectedRepositories(userId: string) {
+    const repositories = await prisma.repository.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+    });
+
+    return repositories;
+}
 
 export async function getGitHubStats(userId: string): Promise<GitHubStats> {
     const cacheKey = `github:stats:${userId}`;
@@ -126,4 +209,125 @@ export async function getGitHubStats(userId: string): Promise<GitHubStats> {
     await redis.setex(cacheKey, STATS_CACHE_TTL, JSON.stringify(stats));
 
     return stats;
+}
+
+export interface PaginatedRepositories {
+    repositories: GitHubRepository[];
+    pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+    };
+}
+
+export async function getAllRepositories(userId: string, cursor?: string): Promise<PaginatedRepositories> {
+    const cacheKey = cursor ? `github:repositories:${userId}:${cursor}` : `github:repositories:${userId}`;
+
+    if (!cursor) {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+            return JSON.parse(cached);
+        }
+    }
+
+    const account = await prisma.account.findFirst({
+        where: { userId, providerId: 'github' },
+        select: { accessToken: true },
+    });
+
+    if (!account?.accessToken) {
+        throw new Error('GitHub account not connected');
+    }
+
+    const octokit = new Octokit({ auth: account.accessToken });
+
+    const { viewer } = await octokit.graphql<{ viewer: { login: string } }>(`{ viewer { login } }`);
+
+    const data = await octokit.graphql<{
+        user: {
+            repositories: {
+                nodes: {
+                    id: string;
+                    name: string;
+                    nameWithOwner: string;
+                    description: string | null;
+                    isPrivate: boolean;
+                    url: string;
+                    primaryLanguage: { name: string } | null;
+                    stargazerCount: number;
+                    forkCount: number;
+                    issues: { totalCount: number };
+                    watchers: { totalCount: number };
+                    defaultBranchRef: { name: string } | null;
+                    createdAt: string;
+                    updatedAt: string;
+                    pushedAt: string | null;
+                }[];
+                pageInfo: { hasNextPage: boolean; endCursor: string };
+            };
+        };
+    }>(
+        `query ($login: String!, $cursor: String) {
+            user(login: $login) {
+                repositories(first: 100, orderBy: {field: PUSHED_AT, direction: DESC}, after: $cursor) {
+                    nodes {
+                        id
+                        name
+                        nameWithOwner
+                        description
+                        isPrivate
+                        url
+                        primaryLanguage { name }
+                        stargazerCount
+                        forkCount
+                        issues { totalCount }
+                        watchers { totalCount }
+                        defaultBranchRef { name }
+                        createdAt
+                        updatedAt
+                        pushedAt
+                    }
+                    pageInfo { hasNextPage endCursor }
+                }
+            }
+        }`,
+        { login: viewer.login },
+    );
+
+    const repositories: GitHubRepository[] = data.user.repositories.nodes.map((repo) => ({
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.nameWithOwner,
+        description: repo.description,
+        private: repo.isPrivate,
+        htmlUrl: repo.url,
+        language: repo.primaryLanguage?.name ?? null,
+        stargazersCount: repo.stargazerCount,
+        forksCount: repo.forkCount,
+        openIssuesCount: repo.issues.totalCount,
+        watchersCount: repo.watchers.totalCount,
+        defaultBranch: repo.defaultBranchRef?.name ?? 'main',
+        createdAt: repo.createdAt,
+        updatedAt: repo.updatedAt,
+        pushedAt: repo.pushedAt,
+    }));
+
+    await redis.setex(
+        cacheKey,
+        REPOS_CACHE_TTL,
+        JSON.stringify({
+            repositories,
+            pageInfo: {
+                hasNextPage: data.user.repositories.pageInfo.hasNextPage,
+                endCursor: data.user.repositories.pageInfo.endCursor,
+            },
+        }),
+    );
+
+    return {
+        repositories,
+        pageInfo: {
+            hasNextPage: data.user.repositories.pageInfo.hasNextPage,
+            endCursor: data.user.repositories.pageInfo.endCursor,
+        },
+    };
 }

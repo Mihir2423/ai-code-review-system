@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchGitHubStats } from '@/lib/fetch-github-stats';
+import { fetchGitHubStats } from '@/lib/github/github-stats';
 import { StatCard, StatCardSkeleton } from './_components';
 
 function transformGitHubStatsToStats(githubStats: {
@@ -43,7 +43,6 @@ export default function DashboardPage() {
         queryKey: ['github-stats'],
         queryFn: fetchGitHubStats,
     });
-    console.log(data);
 
     const stats = data ? transformGitHubStatsToStats(data?.content) : [];
 

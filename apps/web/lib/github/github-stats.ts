@@ -1,7 +1,7 @@
 'use client';
 
 import type { GitHubStats } from '@repo/types';
-import { authClient } from './auth-client';
+import { authClient } from '../auth-client';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -18,7 +18,7 @@ export async function fetchGitHubStats(): Promise<GithubStatsReponse> {
 
     const response = await fetch(`${API_BASE_URL}/api/github/stats`, {
         headers: {
-            Authorization: `Bearer ${(session as any).session?.token}`,
+            Authorization: `Bearer ${(session).session?.token}`,
         },
         credentials: 'include',
     });
