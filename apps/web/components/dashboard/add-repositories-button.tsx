@@ -5,7 +5,7 @@ import { ExternalLink, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { fetchGitHubRepositories, type PaginatedRepositories } from '@/lib/fetch-github-repositories';
+import { fetchGitHubRepositories, type PaginatedRepositories } from '@/lib/github/github-repositories';
 
 export function AddRepositoriesButton() {
     const [open, setOpen] = useState(false);

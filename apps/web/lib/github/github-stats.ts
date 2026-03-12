@@ -1,7 +1,7 @@
 'use client';
 
 import type { GitHubStats } from '@repo/types';
-import { authClient } from './auth-client';
+import { authClient } from '../auth-client';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
