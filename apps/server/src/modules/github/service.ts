@@ -129,11 +129,22 @@ export async function getGitHubStats(userId: string): Promise<GitHubStats> {
     return stats;
 }
 
-export async function getAllRepositories(userId: string): Promise<GitHubRepository[]> {
-    const cacheKey = `github:repositories:${userId}`;
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-        return JSON.parse(cached);
+export interface PaginatedRepositories {
+    repositories: GitHubRepository[];
+    pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+    };
+}
+
+export async function getAllRepositories(userId: string, cursor?: string): Promise<PaginatedRepositories> {
+    const cacheKey = cursor ? `github:repositories:${userId}:${cursor}` : `github:repositories:${userId}`;
+
+    if (!cursor) {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+            return JSON.parse(cached);
+        }
     }
 
     const account = await prisma.account.findFirst({
@@ -218,7 +229,23 @@ export async function getAllRepositories(userId: string): Promise<GitHubReposito
         pushedAt: repo.pushedAt,
     }));
 
-    await redis.setex(cacheKey, REPOS_CACHE_TTL, JSON.stringify(repositories));
+    await redis.setex(
+        cacheKey,
+        REPOS_CACHE_TTL,
+        JSON.stringify({
+            repositories,
+            pageInfo: {
+                hasNextPage: data.user.repositories.pageInfo.hasNextPage,
+                endCursor: data.user.repositories.pageInfo.endCursor,
+            },
+        }),
+    );
 
-    return repositories;
+    return {
+        repositories,
+        pageInfo: {
+            hasNextPage: data.user.repositories.pageInfo.hasNextPage,
+            endCursor: data.user.repositories.pageInfo.endCursor,
+        },
+    };
 }

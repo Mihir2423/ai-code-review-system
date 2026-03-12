@@ -42,6 +42,7 @@ export async function getStats(req: AuthenticatedRequest, res: Response): Promis
 export async function getRepositories(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
         const userId = req.user?.id;
+        const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
 
         if (!userId) {
             res.status(StatusCodes.UNAUTHORIZED).json(
@@ -50,7 +51,7 @@ export async function getRepositories(req: AuthenticatedRequest, res: Response):
             return;
         }
 
-        const repositories = await getAllRepositories(userId);
+        const repositories = await getAllRepositories(userId, cursor);
         res.status(StatusCodes.OK).json(
             new SuccessResponse.Builder()
                 .withMessage('Repositories fetched successfully')
