@@ -1,3 +1,5 @@
+import 'dotenv/config';
+import prisma from '@repo/db';
 import { logger } from '@repo/logger';
 import express from 'express';
 
@@ -11,7 +13,7 @@ app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'webhook-service' });
 });
 
-app.post('/api/webhooks/github', (req, res) => {
+app.post('/api/webhooks/github', async (req, res) => {
     const event = req.headers['x-github-event'] as string;
     const delivery = req.headers['x-github-delivery'] as string;
 
@@ -23,6 +25,26 @@ app.post('/api/webhooks/github', (req, res) => {
         const repo = req.body.repository;
 
         logger.info({ action, pr: pr?.number, repo: repo?.full_name }, 'Pull request event');
+
+        const owner = repo?.owner?.login;
+        const repoName = repo?.name;
+        const fullName = repo?.full_name;
+
+        if (owner && repoName && fullName) {
+            try {
+                const repository = await prisma.repository.findFirst({
+                    where: { fullName },
+                });
+
+                if (repository) {
+                    logger.info({ repositoryId: repository.id, fullName }, 'Repository found in database');
+                } else {
+                    logger.warn({ fullName }, 'Repository not found in database');
+                }
+            } catch (error) {
+                logger.error({ error, fullName }, 'Error checking repository');
+            }
+        }
     }
     if (event === 'ping') {
         console.log('pong');

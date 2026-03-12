@@ -387,6 +387,9 @@ importers:
 
   services/webhook-service:
     dependencies:
+      '@repo/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@repo/kafka':
         specifier: workspace:*
         version: link:../../packages/kafka
