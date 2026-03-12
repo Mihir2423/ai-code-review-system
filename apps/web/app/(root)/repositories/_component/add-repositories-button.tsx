@@ -1,11 +1,15 @@
 'use client';
 
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { fetchGitHubRepositories, type PaginatedRepositories } from '@/lib/github/github-repositories';
+import {
+    connectGitHubRepository,
+    fetchGitHubRepositories,
+    type PaginatedRepositories,
+} from '@/lib/github/github-repositories';
 
 export function AddRepositoriesButton() {
     const [open, setOpen] = useState(false);
@@ -27,6 +31,9 @@ interface AddRepositoriesDialogProps {
 }
 
 function AddRepositoriesDialog({ open, onOpenChange }: AddRepositoriesDialogProps) {
+    const queryClient = useQueryClient();
+    const [connectingRepo, setConnectingRepo] = useState<string | null>(null);
+
     const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<PaginatedRepositories>(
         {
             queryKey: ['github-repositories'],
@@ -35,6 +42,18 @@ function AddRepositoriesDialog({ open, onOpenChange }: AddRepositoriesDialogProp
             getNextPageParam: (lastPage) => (lastPage.pageInfo.hasNextPage ? lastPage.pageInfo.endCursor : undefined),
         },
     );
+
+    const connectMutation = useMutation({
+        mutationFn: ({ owner, repo }: { owner: string; repo: string }) => connectGitHubRepository(owner, repo),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['connected-repositories'] });
+            setConnectingRepo(null);
+            onOpenChange(false);
+        },
+        onError: () => {
+            setConnectingRepo(null);
+        },
+    });
 
     const observerRef = useRef<HTMLDivElement>(null);
 
@@ -60,8 +79,9 @@ function AddRepositoriesDialog({ open, onOpenChange }: AddRepositoriesDialogProp
         }
     }, [open]);
 
-    const handleConnect = (repoName: string) => {
-        console.log(repoName);
+    const handleConnect = (owner: string, repo: string) => {
+        setConnectingRepo(repo);
+        connectMutation.mutate({ owner, repo });
     };
 
     const repositories = data?.pages.flatMap((page) => page.repositories) ?? [];
@@ -157,10 +177,14 @@ function AddRepositoriesDialog({ open, onOpenChange }: AddRepositoriesDialogProp
                                         <ExternalLink size={12} />
                                     </a>
                                     <button
-                                        onClick={() => handleConnect(repo.name)}
-                                        className="h-[26px] px-2.5 rounded border border-[#f97316] bg-transparent text-[#f97316] font-mono text-[10px] tracking-[0.06em] cursor-pointer hover:bg-[#f9731614] transition-colors duration-150"
+                                        onClick={() => {
+                                            const [owner, repoName] = repo.fullName.split('/');
+                                            handleConnect(owner, repoName);
+                                        }}
+                                        disabled={connectingRepo === repo.name}
+                                        className="h-[26px] px-2.5 rounded border border-[#f97316] bg-transparent text-[#f97316] font-mono text-[10px] tracking-[0.06em] cursor-pointer hover:bg-[#f9731614] transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Connect
+                                        {connectingRepo === repo.name ? 'Connecting...' : 'Connect'}
                                     </button>
                                 </div>
                             </div>

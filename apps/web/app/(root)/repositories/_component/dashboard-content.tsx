@@ -1,11 +1,19 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from 'lucide-react';
 import { useState } from 'react';
+import { fetchConnectedRepositories } from '@/lib/github/github-repositories';
 import { AddRepositoriesButton } from './add-repositories-button';
 
 export function DashboardContent() {
     const [rowsPerPage, setRowsPerPage] = useState(10);
+
+    const { data: connectedRepos, isLoading } = useQuery({
+        queryKey: ['connected-repositories'],
+        queryFn: fetchConnectedRepositories,
+    });
+
     return (
         <main className="flex-1 overflow-y-auto px-8 py-6">
             <h1 className="text-2xl font-bold mb-1" style={{ color: '#e8e8ea' }}>
@@ -58,16 +66,32 @@ export function DashboardContent() {
                     </button>
                 </div>
 
-                <div
-                    className="flex items-center px-4 py-3.5 cursor-pointer transition-colors"
-                    style={{ borderBottom: '1px solid #13131a' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#0e0e14')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                    <span className="text-sm font-medium" style={{ color: '#7ab4f5' }}>
-                        ai-code-review-system
-                    </span>
-                </div>
+                {isLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                        <div className="w-5 h-5 border-2 border-[#242424] border-t-[#38bdf8] rounded-full animate-spin" />
+                    </div>
+                ) : connectedRepos && connectedRepos.length > 0 ? (
+                    connectedRepos.map((repo: unknown) => {
+                        const r = repo as { fullName: string };
+                        return (
+                            <div
+                                key={r.fullName}
+                                className="flex items-center px-4 py-3.5 cursor-pointer transition-colors"
+                                style={{ borderBottom: '1px solid #13131a' }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = '#0e0e14')}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            >
+                                <span className="text-sm font-medium" style={{ color: '#7ab4f5' }}>
+                                    {r.fullName}
+                                </span>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="flex items-center justify-center py-12" style={{ color: '#606068' }}>
+                        <span>No connected repositories</span>
+                    </div>
+                )}
             </div>
 
             <div className="flex items-center justify-end gap-3 mt-3" style={{ color: '#606068', fontSize: 13 }}>

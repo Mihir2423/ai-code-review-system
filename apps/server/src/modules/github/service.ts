@@ -6,6 +6,88 @@ import { Octokit } from 'octokit';
 const STATS_CACHE_TTL = 30 * 60;
 const REPOS_CACHE_TTL = 15 * 60;
 
+const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:3000';
+const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || 'development-secret';
+
+type Webhook = Awaited<ReturnType<Octokit['rest']['repos']['createWebhook']>>['data'];
+
+export async function createWebhook(userId: string, owner: string, repo: string): Promise<Webhook> {
+    const account = await prisma.account.findFirst({
+        where: { userId, providerId: 'github' },
+        select: { accessToken: true },
+    });
+
+    if (!account?.accessToken) {
+        throw new Error('GitHub account not connected');
+    }
+
+    const octokit = new Octokit({ auth: account.accessToken });
+
+    console.log('before');
+    const existingWebhooks = await octokit.rest.repos.listWebhooks({
+        owner,
+        repo,
+    });
+
+    console.log('existing');
+
+    const webhookUrl = `${PUBLIC_URL}/api/webhooks/github`;
+    const existingWebhook = existingWebhooks.data.find((hook) => hook.config.url === webhookUrl);
+
+    if (existingWebhook) {
+        return existingWebhook;
+    }
+
+    const webhook = await octokit.rest.repos.createWebhook({
+        owner,
+        repo,
+        config: {
+            url: webhookUrl,
+            content_type: 'json',
+            secret: WEBHOOK_SECRET,
+        },
+        events: ['pull_request'],
+        active: true,
+    });
+
+    return webhook.data;
+}
+
+export async function connectRepository(userId: string, owner: string, repo: string) {
+    const account = await prisma.account.findFirst({
+        where: { userId, providerId: 'github' },
+        select: { accessToken: true },
+    });
+
+    if (!account?.accessToken) {
+        throw new Error('GitHub account not connected');
+    }
+
+    const webhook = await createWebhook(userId, owner, repo);
+
+    const repository = await prisma.repository.create({
+        data: {
+            githubId: String(webhook.id),
+            name: repo,
+            owner,
+            fullName: `${owner}/${repo}`,
+            url: `https://github.com/${owner}/${repo}/`,
+            userId,
+        },
+    });
+
+    return repository;
+}
+
+export async function getConnectedRepositories(userId: string) {
+    const repositories = await prisma.repository.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+    });
+
+    return repositories;
+}
+
 export async function getGitHubStats(userId: string): Promise<GitHubStats> {
     const cacheKey = `github:stats:${userId}`;
     const cached = await redis.get(cacheKey);

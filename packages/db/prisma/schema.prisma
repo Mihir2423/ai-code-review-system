@@ -74,7 +74,7 @@ model Verification {
 
 model Repository {
   id String @id @default(cuid())
-  githubId BigInt @unique
+  githubId String @unique
   name String
   owner String
   fullName String
