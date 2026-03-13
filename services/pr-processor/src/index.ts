@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import prisma from '@repo/db';
-import { ensureTopics, kafka, sendMessage } from '@repo/kafka';
+import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { Octokit } from 'octokit';
 
@@ -70,13 +70,17 @@ async function reviewPullRequest(
 }
 
 async function startConsumer(): Promise<void> {
-    const consumer = kafka.consumer({
+    const consumer = kafkaManager.consumer({
         groupId: 'pr-processor',
         sessionTimeout: 300000,
         heartbeatInterval: 30000,
     });
+
     await consumer.connect();
+    logger.info('[PR Processor] Consumer connected to Kafka');
+
     await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
+
     await consumer.run({
         eachMessage: async ({ message }) => {
             const value = message.value?.toString();
@@ -134,7 +138,7 @@ async function startConsumer(): Promise<void> {
 > < Overly attached code reviewer. >
 >  --------------------------------
 >   \\\\
->     \\\\   (\\__/)
+>     \\\\   (__/)
 >         (•ㅅ•)
 >         /　 づ
 > \`\`\``,
@@ -178,12 +182,38 @@ async function startConsumer(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    logger.info('PR Processor service started');
-    await ensureTopics([TOPIC, COMMENT_TOPIC, CONTEXT_TOPIC]);
-    await startConsumer();
+    logger.info('PR Processor service starting...');
+
+    try {
+        await ensureTopics([TOPIC, COMMENT_TOPIC, CONTEXT_TOPIC]);
+        logger.info('[PR Processor] Topics ensured');
+
+        await startConsumer();
+    } catch (error) {
+        logger.error({ error }, 'Failed to start PR processor');
+
+        setTimeout(() => {
+            logger.info('Retrying PR Processor startup...');
+            main().catch((err) => {
+                logger.error({ error: err }, 'Retry failed');
+                process.exit(1);
+            });
+        }, 5000);
+
+        return;
+    }
 }
 
-main().catch((error) => {
-    logger.error({ error }, 'Failed to start PR processor');
-    process.exit(1);
+main();
+
+process.on('SIGTERM', async () => {
+    logger.info('Received SIGTERM, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    logger.info('Received SIGINT, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
 });

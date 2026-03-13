@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { google } from '@ai-sdk/google';
 import prisma from '@repo/db';
-import { ensureTopics, kafka } from '@repo/kafka';
+import { ensureTopics, kafkaManager } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { generateText } from 'ai';
 import { Octokit } from 'octokit';
@@ -91,13 +91,17 @@ async function postReviewComment(
 }
 
 async function startConsumer(): Promise<void> {
-    const consumer = kafka.consumer({
+    const consumer = kafkaManager.consumer({
         groupId: 'ai-review-worker',
         sessionTimeout: 300000,
         heartbeatInterval: 30000,
     });
+
     await consumer.connect();
+    logger.info('[AI Review Worker] Consumer connected to Kafka');
+
     await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
+
     await consumer.run({
         eachMessage: async ({ message }) => {
             const value = message.value?.toString();
@@ -136,12 +140,38 @@ async function startConsumer(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    logger.info('AI Review Worker service started');
-    await ensureTopics([TOPIC]);
-    await startConsumer();
+    logger.info('AI Review Worker service starting...');
+
+    try {
+        await ensureTopics([TOPIC]);
+        logger.info('[AI Review Worker] Topics ensured');
+
+        await startConsumer();
+    } catch (error) {
+        logger.error({ error }, 'Failed to start AI Review Worker');
+
+        setTimeout(() => {
+            logger.info('Retrying AI Review Worker startup...');
+            main().catch((err) => {
+                logger.error({ error: err }, 'Retry failed');
+                process.exit(1);
+            });
+        }, 5000);
+
+        return;
+    }
 }
 
-main().catch((error) => {
-    logger.error({ error }, 'Failed to start AI Review Worker');
-    process.exit(1);
+main();
+
+process.on('SIGTERM', async () => {
+    logger.info('Received SIGTERM, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    logger.info('Received SIGINT, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
 });
