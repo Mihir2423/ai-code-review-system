@@ -2,7 +2,7 @@ import { logger } from '@repo/logger';
 import cors from 'cors';
 import express from 'express';
 import 'dotenv/config';
-import { producer } from '@repo/kafka';
+import { kafkaManager } from '@repo/kafka';
 import { authMiddleware } from './middleware/auth.js';
 import { githubRoutes } from './modules/index.js';
 
@@ -25,8 +25,23 @@ app.get('/health', (_req, res) => {
 app.use('/api/github', authMiddleware, githubRoutes);
 
 async function start() {
-    await producer.connect();
-    logger.info('Kafka producer connected');
+    try {
+        await kafkaManager.getProducer();
+        logger.info('[Server] Kafka producer connected');
+    } catch (error) {
+        logger.error({ error }, 'Failed to connect Kafka producer, retrying in 5s...');
+
+        setTimeout(() => {
+            kafkaManager
+                .getProducer()
+                .then(() => {
+                    logger.info('[Server] Kafka producer connected on retry');
+                })
+                .catch((err) => {
+                    logger.error({ error: err }, 'Failed to connect Kafka producer on retry');
+                });
+        }, 5000);
+    }
 
     app.listen(PORT, () => {
         logger.info({ port: PORT }, 'Server started');
@@ -34,3 +49,15 @@ async function start() {
 }
 
 start();
+
+process.on('SIGTERM', async () => {
+    logger.info('Received SIGTERM, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    logger.info('Received SIGINT, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
+});

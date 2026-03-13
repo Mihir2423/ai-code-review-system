@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import prisma from '@repo/db';
-import { ensureTopics, kafka, sendMessage } from '@repo/kafka';
+import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { Octokit } from 'octokit';
 import { generateEmbedding, indexCodebase } from './lib/embedding.js';
@@ -63,13 +63,17 @@ async function retrieveContext(query: string, repoId: string, topK: number = 5) 
 }
 
 async function startContextConsumer(): Promise<void> {
-    const consumer = kafka.consumer({
+    const consumer = kafkaManager.consumer({
         groupId: 'repo-indexer-context',
         sessionTimeout: 300000,
         heartbeatInterval: 30000,
     });
+
     await consumer.connect();
+    logger.info('[Repo Indexer] Context consumer connected to Kafka');
+
     await consumer.subscribe({ topic: CONTEXT_TOPIC, fromBeginning: false });
+
     await consumer.run({
         eachMessage: async ({ message }) => {
             const value = message.value?.toString();
@@ -107,13 +111,17 @@ async function startContextConsumer(): Promise<void> {
 }
 
 async function startConsumer(): Promise<void> {
-    const consumer = kafka.consumer({
+    const consumer = kafkaManager.consumer({
         groupId: 'repo-indexer',
         sessionTimeout: 300000,
         heartbeatInterval: 30000,
     });
+
     await consumer.connect();
+    logger.info('[Repo Indexer] Consumer connected to Kafka');
+
     await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
+
     await consumer.run({
         eachMessage: async ({ message }) => {
             const value = message.value?.toString();
@@ -142,13 +150,39 @@ async function startConsumer(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    logger.info('Repo Indexer service started');
-    await ensureTopics([TOPIC, CONTEXT_TOPIC, AI_REVIEW_TOPIC]);
-    await startConsumer();
-    await startContextConsumer();
+    logger.info('Repo Indexer service starting...');
+
+    try {
+        await ensureTopics([TOPIC, CONTEXT_TOPIC, AI_REVIEW_TOPIC]);
+        logger.info('[Repo Indexer] Topics ensured');
+
+        await startConsumer();
+        await startContextConsumer();
+    } catch (error) {
+        logger.error({ error }, 'Failed to start Repo Indexer');
+
+        setTimeout(() => {
+            logger.info('Retrying Repo Indexer startup...');
+            main().catch((err) => {
+                logger.error({ error: err }, 'Retry failed');
+                process.exit(1);
+            });
+        }, 5000);
+
+        return;
+    }
 }
 
-main().catch((error) => {
-    logger.error({ error }, 'Failed to index repository');
-    process.exit(1);
+main();
+
+process.on('SIGTERM', async () => {
+    logger.info('Received SIGTERM, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    logger.info('Received SIGINT, shutting down gracefully...');
+    await kafkaManager.disconnect();
+    process.exit(0);
 });
