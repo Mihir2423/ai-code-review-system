@@ -19,6 +19,7 @@ interface PRDetails {
     prTitle: string;
     prBody: string;
     diff: string;
+    commitSha: string;
 }
 
 async function getAccessToken(userId: string): Promise<string | null> {
@@ -66,6 +67,7 @@ async function reviewPullRequest(
         prTitle: pr.title,
         prBody: pr.body || '',
         diff: diff as unknown as string,
+        commitSha: pr.head.sha,
     };
 }
 
@@ -121,6 +123,7 @@ async function startConsumer(): Promise<void> {
                         prNumber,
                         userId,
                         diff: prData.diff,
+                        commitSha: prData.commitSha,
                     });
                     logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to Kafka');
                 }

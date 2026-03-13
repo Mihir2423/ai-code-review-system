@@ -1,12 +1,13 @@
 import 'dotenv/config';
 import { google } from '@ai-sdk/google';
 import prisma from '@repo/db';
-import { ensureTopics, kafkaManager } from '@repo/kafka';
+import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { generateText } from 'ai';
-import { Octokit } from 'octokit';
 
-const TOPIC = 'pr.ai-review';
+const TOPIC_REVIEW = 'pr.ai-review';
+const TOPIC_ISSUES = 'pr.issues';
+const TOPIC_COMMENT = 'pr.comment';
 
 interface AIReviewMessage {
     title: string;
@@ -18,6 +19,7 @@ interface AIReviewMessage {
     repo: string;
     prNumber: number;
     userId: string;
+    commitSha: string;
 }
 
 async function getAccessToken(userId: string): Promise<string | null> {
@@ -33,13 +35,28 @@ async function getAccessToken(userId: string): Promise<string | null> {
     }
 }
 
+interface ReviewIssue {
+    file: string;
+    line: number;
+    severity: 'critical' | 'warning' | 'suggestion';
+    description: string;
+    diff: string;
+    suggestion: string;
+}
+
+interface ReviewResult {
+    issues: ReviewIssue[];
+    summary: string;
+    strengths: string;
+}
+
 async function generateCodeReview(
     title: string,
     description: string,
     context: string[],
     diff: string,
-): Promise<string> {
-    const prompt = `You are an expert code reviewer. Analyze the following pull request and provide a detailed, constructive code review.
+): Promise<ReviewResult> {
+    const prompt = `You are an expert code reviewer. Analyze the following pull request and provide a structured code review.
 
 PR Title: ${title}
 PR Description: ${description || 'No description provided'}
@@ -52,42 +69,36 @@ Code Changes:
 ${diff}
 \`\`\`
 
-Please provide:
-1. **Walkthrough**: A file-by-file explanation of the changes.
-2. **Sequence Diagram**: A Mermaid JS sequence diagram visualizing the flow of the changes (if applicable). Use \`\`\`mermaid ... \`\`\` block. **IMPORTANT**: Ensure the Mermaid syntax is valid. Do not use special characters (like quotes, braces, parentheses) inside Note text or labels as it breaks rendering. Keep the diagram simple.
-3. **Summary**: Brief overview.
-4. **Strengths**: What's done well.
-5. **Issues**: Bugs, security concerns, code smells.
-6. **Suggestions**: Specific code improvements.
-7. **Poem**: A short, creative poem summarizing the changes at the very end.
+Analyze the changes and return a JSON object with the following structure:
+{
+  "issues": [
+    {
+      "file": "filename.ts",
+      "line": 42,
+      "severity": "critical|warning|suggestion",
+      "description": "What's wrong",
+      "diff": "the problematic code snippet",
+      "suggestion": "how to fix it"
+    }
+  ],
+  "summary": "Brief overview of the changes",
+  "strengths": "What's done well"
+}
 
-Format your response in markdown.`;
+Only include issues if you find actual problems. If no issues found, return empty array.
+Return ONLY valid JSON, no markdown formatting.`;
 
     const { text } = await generateText({
         model: google('gemini-2.5-flash'),
         prompt,
     });
 
-    return text;
-}
-
-async function postReviewComment(
-    owner: string,
-    repo: string,
-    prNumber: number,
-    comment: string,
-    accessToken: string,
-): Promise<void> {
-    const octokit = new Octokit({ auth: accessToken });
-
-    await octokit.rest.issues.createComment({
-        owner,
-        repo,
-        issue_number: prNumber,
-        body: comment,
-    });
-
-    logger.info({ owner, repo, prNumber }, 'Posted review comment to pull request');
+    const cleanedText = text
+        .replace(/^```json\n?/, '')
+        .replace(/```$/, '')
+        .trim();
+    const result = JSON.parse(cleanedText) as ReviewResult;
+    return result;
 }
 
 async function startConsumer(): Promise<void> {
@@ -100,7 +111,7 @@ async function startConsumer(): Promise<void> {
     await consumer.connect();
     logger.info('[AI Review Worker] Consumer connected to Kafka');
 
-    await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
+    await consumer.subscribe({ topic: TOPIC_REVIEW, fromBeginning: false });
 
     await consumer.run({
         eachMessage: async ({ message }) => {
@@ -110,40 +121,54 @@ async function startConsumer(): Promise<void> {
             const reviewMessage = JSON.parse(value) as AIReviewMessage;
             logger.info({ reviewMessage, offset: message.offset }, 'Received AI review event');
 
-            const { title, description, context, diff, repoId, owner, repo, prNumber, userId } = reviewMessage;
+            const { title, description, context, diff, repoId, owner, repo, prNumber, userId, commitSha } =
+                reviewMessage;
 
             if (!userId) {
                 logger.error('No userId provided in message');
                 return;
             }
 
-            const accessToken = await getAccessToken(userId);
-            if (!accessToken) {
-                logger.error({ userId }, 'No GitHub access token found for user');
-                return;
-            }
-
             try {
                 logger.info({ repoId, prNumber }, 'Generating code review...');
                 const review = await generateCodeReview(title, description, context, diff);
-                logger.info({ repoId, prNumber, reviewLength: review.length }, 'Generated code review');
+                logger.info({ repoId, prNumber, issuesCount: review.issues.length }, 'Generated code review');
 
-                await postReviewComment(owner, repo, prNumber, review, accessToken);
-                logger.info({ repoId, prNumber }, 'Posted review comment');
+                if (review.issues.length > 0) {
+                    await sendMessage(TOPIC_ISSUES, {
+                        owner,
+                        repo,
+                        prNumber,
+                        userId,
+                        commitSha,
+                        issues: review.issues,
+                    });
+                    logger.info({ repoId, prNumber, issuesCount: review.issues.length }, 'Sent issues to Kafka');
+                }
+
+                const summaryMessage = `## Code Review Summary\n\n${review.summary}\n\n### Strengths\n${review.strengths}\n\n### Issues Found: ${review.issues.length}`;
+                await sendMessage(TOPIC_COMMENT, {
+                    owner,
+                    repo,
+                    prNumber,
+                    userId,
+                    comment: summaryMessage,
+                });
+                logger.info({ repoId, prNumber }, 'Sent summary to Kafka');
             } catch (error) {
                 logger.error({ error, repoId, prNumber }, 'Failed to generate/post review');
             }
         },
     });
 
-    logger.info({ topic: TOPIC }, 'Kafka consumer started');
+    logger.info({ topic: TOPIC_REVIEW }, 'Kafka consumer started');
 }
 
 async function main(): Promise<void> {
     logger.info('AI Review Worker service starting...');
 
     try {
-        await ensureTopics([TOPIC]);
+        await ensureTopics([TOPIC_REVIEW, TOPIC_ISSUES, TOPIC_COMMENT]);
         logger.info('[AI Review Worker] Topics ensured');
 
         await startConsumer();

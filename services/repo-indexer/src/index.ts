@@ -19,6 +19,7 @@ interface PRContextMessage {
     prNumber: number;
     userId: string;
     diff: string;
+    commitSha: string;
 }
 
 async function getAccessToken(userId: string): Promise<string | null> {
@@ -82,7 +83,7 @@ async function startContextConsumer(): Promise<void> {
             const contextMessage = JSON.parse(value) as PRContextMessage;
             logger.info({ contextMessage, offset: message.offset }, 'Received pr-context event');
 
-            const { query, repoId, owner, repo, prNumber, userId, diff } = contextMessage;
+            const { query, repoId, owner, repo, prNumber, userId, diff, commitSha } = contextMessage;
             logger.info({ query, repoId }, 'Retrieving context for PR');
 
             try {
@@ -99,6 +100,7 @@ async function startContextConsumer(): Promise<void> {
                     repo,
                     prNumber,
                     userId,
+                    commitSha,
                 });
                 logger.info({ repoId, prNumber }, 'Sent AI review message to Kafka');
             } catch (error) {
