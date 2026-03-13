@@ -1,19 +1,9 @@
-import { google } from '@ai-sdk/google';
+import { generateEmbedding } from '@repo/ai';
 import { logger } from '@repo/logger';
-import { embed } from 'ai';
 import type { FileContent } from './github.js';
 import { pineconeIndex } from './pinecone.js';
 
 const BATCH_SIZE = 50;
-
-export async function generateEmbedding(text: string, dimensions?: number): Promise<number[]> {
-    const result = await embed({
-        model: google.textEmbeddingModel('gemini-embedding-001'),
-        value: text,
-    });
-
-    return dimensions ? result.embedding.slice(0, dimensions) : result.embedding;
-}
 
 interface VectorRecord {
     id: string;

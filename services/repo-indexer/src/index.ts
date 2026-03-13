@@ -1,9 +1,10 @@
 import 'dotenv/config';
+import { generateEmbedding } from '@repo/ai';
 import prisma from '@repo/db';
 import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { Octokit } from 'octokit';
-import { generateEmbedding, indexCodebase } from './lib/embedding.js';
+import { indexCodebase } from './lib/embedding.js';
 import { type FileContent, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
 import { pineconeIndex } from './lib/pinecone.js';
 
