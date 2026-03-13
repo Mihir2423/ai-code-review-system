@@ -1,28 +1,30 @@
 {
-  "name": "pr-processor",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.17.1",
-  "dependencies": {
-    "@repo/ai": "workspace:*",
-    "@repo/kafka": "workspace:*",
-    "@repo/logger": "workspace:*",
-    "cors": "^2.8.6",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^20.19.37",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
-  }
+    "name": "pr-processor",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "packageManager": "pnpm@10.17.1",
+    "dependencies": {
+        "@repo/ai": "workspace:*",
+        "@repo/db": "workspace:*",
+        "@repo/kafka": "workspace:*",
+        "@repo/logger": "workspace:*",
+        "cors": "^2.8.6",
+        "dotenv": "^17.3.1",
+        "express": "^5.2.1",
+        "octokit": "^5.0.5"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.6",
+        "@types/node": "^20.19.37",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3"
+    }
 }

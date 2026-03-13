@@ -1,4 +1,4 @@
-import { Kafka, logLevel } from 'kafkajs';
+import { Kafka, logLevel, Partitioners } from 'kafkajs';
 
 export const kafka = new Kafka({
     clientId: 'ai-code-review-system',
@@ -6,8 +6,22 @@ export const kafka = new Kafka({
     logLevel: logLevel.WARN,
 });
 
-export const producer = kafka.producer();
+export const producer = kafka.producer({ createPartitioner: Partitioners.LegacyPartitioner });
 export const consumer = kafka.consumer({ groupId: 'review-workers' });
+export const admin = kafka.admin();
+
+export async function ensureTopics(topics: string[]): Promise<void> {
+    await admin.connect();
+    const existingTopics = await admin.listTopics();
+    const missingTopics = topics.filter((t) => !existingTopics.includes(t));
+
+    if (missingTopics.length > 0) {
+        await admin.createTopics({
+            topics: missingTopics.map((topic) => ({ topic, numPartitions: 1, replicationFactor: 1 })),
+        });
+    }
+    await admin.disconnect();
+}
 
 export async function sendMessage(topic: string, message: object): Promise<void> {
     try {

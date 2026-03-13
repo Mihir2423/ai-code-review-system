@@ -1,12 +1,25 @@
 import 'dotenv/config';
 import prisma from '@repo/db';
-import { kafka } from '@repo/kafka';
+import { ensureTopics, kafka, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { Octokit } from 'octokit';
-import { indexCodebase } from './lib/embedding.js';
+import { generateEmbedding, indexCodebase } from './lib/embedding.js';
 import { type FileContent, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
+import { pineconeIndex } from './lib/pinecone.js';
 
 const TOPIC = 'repo.index';
+const CONTEXT_TOPIC = 'pr.context';
+const AI_REVIEW_TOPIC = 'pr.ai-review';
+
+interface PRContextMessage {
+    query: string;
+    repoId: string;
+    owner: string;
+    repo: string;
+    prNumber: number;
+    userId: string;
+    diff: string;
+}
 
 async function getAccessToken(userId: string): Promise<string | null> {
     try {
@@ -35,6 +48,62 @@ async function indexRepository(repoDetails: RepoDetails, accessToken: string): P
         owner: repoDetails.owner,
         repo: repoDetails.repo,
     });
+}
+
+async function retrieveContext(query: string, repoId: string, topK: number = 5) {
+    const embedding = await generateEmbedding(query, 1024);
+    const results = await pineconeIndex.query({
+        vector: embedding,
+        filter: { repoId },
+        topK,
+        includeMetadata: true,
+    });
+
+    return results.matches.map((match) => match?.metadata?.content as string).filter(Boolean);
+}
+
+async function startContextConsumer(): Promise<void> {
+    const consumer = kafka.consumer({
+        groupId: 'repo-indexer-context',
+        sessionTimeout: 300000,
+        heartbeatInterval: 30000,
+    });
+    await consumer.connect();
+    await consumer.subscribe({ topic: CONTEXT_TOPIC, fromBeginning: false });
+    await consumer.run({
+        eachMessage: async ({ message }) => {
+            const value = message.value?.toString();
+            if (!value) return;
+
+            const contextMessage = JSON.parse(value) as PRContextMessage;
+            logger.info({ contextMessage, offset: message.offset }, 'Received pr-context event');
+
+            const { query, repoId, owner, repo, prNumber, userId, diff } = contextMessage;
+            logger.info({ query, repoId }, 'Retrieving context for PR');
+
+            try {
+                const context = await retrieveContext(query, repoId);
+                logger.info({ repoId, prNumber, contextLength: context.length }, 'Retrieved context for PR');
+
+                await sendMessage(AI_REVIEW_TOPIC, {
+                    title: query.split('\n')[0],
+                    description: query.split('\n').slice(1).join('\n'),
+                    context,
+                    diff,
+                    repoId,
+                    owner,
+                    repo,
+                    prNumber,
+                    userId,
+                });
+                logger.info({ repoId, prNumber }, 'Sent AI review message to Kafka');
+            } catch (error) {
+                logger.error({ error, repoId, prNumber }, 'Failed to retrieve context');
+            }
+        },
+    });
+
+    logger.info({ topic: CONTEXT_TOPIC }, 'Context consumer started');
 }
 
 async function startConsumer(): Promise<void> {
@@ -74,7 +143,9 @@ async function startConsumer(): Promise<void> {
 
 async function main(): Promise<void> {
     logger.info('Repo Indexer service started');
+    await ensureTopics([TOPIC, CONTEXT_TOPIC, AI_REVIEW_TOPIC]);
     await startConsumer();
+    await startContextConsumer();
 }
 
 main().catch((error) => {
