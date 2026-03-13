@@ -1,20 +1,24 @@
 {
-  "name": "@repo/ai",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.17.1",
-  "dependencies": {
-    "@ai-sdk/google": "^3.0.43",
-    "ai": "^6.0.116"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+    "name": "@repo/ai",
+    "version": "1.0.0",
+    "description": "",
+    "main": "src/index.ts",
+    "type": "module",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "packageManager": "pnpm@10.17.1",
+    "dependencies": {
+        "@ai-sdk/google": "^3.0.43",
+        "@repo/logger": "workspace:*",
+        "ai": "^6.0.116"
+    },
+    "devDependencies": {
+        "@types/node": "^25.5.0",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.9.3"
+    }
 }
