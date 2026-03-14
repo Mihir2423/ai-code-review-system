@@ -18,6 +18,7 @@ interface PRReviewMessage {
 interface PRDetails {
     prTitle: string;
     prBody: string;
+    prUrl: string;
     diff: string;
     commitSha: string;
 }
@@ -66,6 +67,7 @@ async function reviewPullRequest(
     return {
         prTitle: pr.title,
         prBody: pr.body || '',
+        prUrl: pr.html_url,
         diff: diff as unknown as string,
         commitSha: pr.head.sha,
     };
@@ -115,6 +117,27 @@ async function startConsumer(): Promise<void> {
                 });
 
                 if (repository) {
+                    await prisma.review.upsert({
+                        where: {
+                            repositoryId_prNumber: {
+                                repositoryId: repository.id,
+                                prNumber,
+                            },
+                        },
+                        create: {
+                            repositoryId: repository.id,
+                            prNumber,
+                            prTitle: prData.prTitle,
+                            prUrl: prData.prUrl,
+                            review: '',
+                            issues: [],
+                            status: 'pending',
+                        },
+                        update: {
+                            status: 'pending',
+                        },
+                    });
+
                     await sendMessage(CONTEXT_TOPIC, {
                         query,
                         repoId: repository.id,
