@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 import { generateCodeReview, type ReviewIssue } from '@repo/ai';
+import prisma from '@repo/db';
 import { ensureTopics, kafkaManager, sendMessageWithKey } from '@repo/kafka';
 import { logger } from '@repo/logger';
 
@@ -131,11 +132,42 @@ async function startConsumer(): Promise<void> {
                     { repoId, prNumber, issuesCount: issuesWithLines.length },
                     'Sent issues and summary to Kafka',
                 );
+
+                await prisma.review.update({
+                    where: {
+                        repositoryId_prNumber: {
+                            repositoryId: repoId,
+                            prNumber,
+                        },
+                    },
+                    data: {
+                        status: 'completed',
+                        review: summaryMessage,
+                        issues: issuesWithLines.map((i) => `${i.file}:${i.line} - ${i.description}`),
+                    },
+                });
+                logger.info({ repoId, prNumber }, 'Updated review status to completed');
             } catch (error) {
                 logger.error(
                     { error: String(error), repoId, prNumber, stack: error instanceof Error ? error.stack : undefined },
                     'Failed to generate/post review',
                 );
+
+                await prisma.review
+                    .update({
+                        where: {
+                            repositoryId_prNumber: {
+                                repositoryId: repoId,
+                                prNumber,
+                            },
+                        },
+                        data: {
+                            status: 'failed',
+                        },
+                    })
+                    .catch((err: unknown) => {
+                        logger.error({ err, repoId, prNumber }, 'Failed to update review status to failed');
+                    });
             }
         },
     });

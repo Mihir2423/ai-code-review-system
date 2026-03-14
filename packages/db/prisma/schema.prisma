@@ -96,6 +96,7 @@ model Review {
   prTitle               String
   prUrl                 String
   review                String
+  issues                String[]
   status                String @default("pending") // completed, failed, pending
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
