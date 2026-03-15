@@ -25,20 +25,31 @@ interface AIReviewMessage {
 function findLineNumberInDiff(diff: string, file: string, code: string): number {
     const lines = diff.split('\n');
     let currentFile = '';
-    let hunkStartLine = 0;
-    const searchCode = code.substring(0, 30).trim();
+    let lineNumber = 0;
 
-    for (const line of lines) {
+    const cleanCode = code
+        .replace(/^```[\w]*\n?/, '')
+        .replace(/```$/, '')
+        .trim();
+    const searchCode = cleanCode.substring(0, 30).trim();
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
         if (line.startsWith('diff --git')) {
             const match = line.match(/b\/(.+)/);
             if (match && match[1]) currentFile = match[1];
         } else if (line.startsWith('@@')) {
             const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
-            if (match && match[1]) hunkStartLine = parseInt(match[1], 10);
-        } else if (currentFile === file && line.includes(searchCode)) {
-            return hunkStartLine;
-        } else if (currentFile === file && (line.startsWith('+') || line.startsWith(' '))) {
-            hunkStartLine++;
+            if (match && match[1]) lineNumber = parseInt(match[1], 10);
+        } else if (currentFile === file) {
+            const strippedLine = line.replace(/^[+-]\s?/, '');
+            if (strippedLine.includes(searchCode)) {
+                return lineNumber;
+            }
+            if (line.startsWith('+') || line.startsWith(' ')) {
+                lineNumber++;
+            }
         }
     }
 
