@@ -152,7 +152,7 @@ const ReviewHistoryPage = () => {
                   </ReactMarkdown>
 
                   {review.issues && review.issues.length > 0 && (
-                    <div className="mt-12 pt-8 border-t border-neutral-900">
+                    <div className="mt-6 pt-8 border-t border-neutral-900">
                       <div className="grid gap-3">
                         {review.issues.map((issue: string, i: number) => (
                           <div key={i} className="flex gap-4 p-4 rounded-lg bg-[#0D0D0D] border border-neutral-800/40 hover:border-amber-500/20 transition-colors group/issue">
