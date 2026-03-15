@@ -2,12 +2,12 @@ import 'dotenv/config';
 
 import { generateCodeReview, type ReviewIssue } from '@repo/ai';
 import prisma from '@repo/db';
-import { ensureTopics, kafkaManager, sendMessageWithKey } from '@repo/kafka';
 import { logger } from '@repo/logger';
+import { addJob, createQueue, createWorker } from '@repo/queue';
 import type { IssueWithMetadata } from '@repo/types';
 
-const TOPIC_REVIEW = 'pr.ai-review';
-const TOPIC_ISSUES = 'pr.issues';
+const QUEUE_NAME = 'pr-ai-review';
+const ISSUES_QUEUE = 'pr-issues';
 
 interface AIReviewMessage {
     title: string;
@@ -21,8 +21,15 @@ interface AIReviewMessage {
     userId: string;
     commitSha: string;
 }
+
+const aiReviewQueue = createQueue(QUEUE_NAME);
+const issuesQueue = createQueue(ISSUES_QUEUE);
+
 function stripMarkdownFences(code: string): string {
-    return code.replace(/^```[\w]*\n?/gm, '').replace(/```$/gm, '').trim();
+    return code
+        .replace(/^```[\w]*\n?/gm, '')
+        .replace(/```$/gm, '')
+        .trim();
 }
 
 function findLineNumberInDiff(diff: string, file: string, code: string): number | null {
@@ -85,115 +92,109 @@ function deduplicateIssues(issues: ReviewIssue[]): ReviewIssue[] {
     return deduplicated;
 }
 
-async function startConsumer(): Promise<void> {
-    const consumer = kafkaManager.consumer({
-        groupId: 'ai-review-worker',
-        sessionTimeout: 300000,
-        heartbeatInterval: 30000,
-    });
+async function startWorker(): Promise<void> {
+    const worker = createWorker(QUEUE_NAME, async (job) => {
+        const reviewMessage = job.data as AIReviewMessage;
+        logger.info({ reviewMessage }, 'Received AI review event');
 
-    await consumer.connect();
-    logger.info('[AI Review Worker] Consumer connected to Kafka');
+        const { title, description, context, diff, repoId, owner, repo, prNumber, userId, commitSha } = reviewMessage;
 
-    await consumer.subscribe({ topic: TOPIC_REVIEW, fromBeginning: false });
+        if (!userId) {
+            logger.error('No userId provided in message');
+            return;
+        }
 
-    await consumer.run({
-        eachMessage: async ({ message }) => {
-            const value = message.value?.toString();
-            if (!value) return;
+        try {
+            logger.info({ repoId, prNumber }, 'Generating code review...');
+            const review = await generateCodeReview(title, description, context, diff);
 
-            const reviewMessage = JSON.parse(value) as AIReviewMessage;
-            logger.info({ reviewMessage, offset: message.offset }, 'Received AI review event');
+            const uniqueIssues = deduplicateIssues(review.issues);
 
-            const { title, description, context, diff, repoId, owner, repo, prNumber, userId, commitSha } =
-                reviewMessage;
+            const issuesWithLines = uniqueIssues
+                .map((issue) => {
+                    const line = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
+                    return line !== null ? { ...issue, line } : null;
+                })
+                .filter((issue): issue is NonNullable<typeof issue> => issue !== null);
 
-            if (!userId) {
-                logger.error('No userId provided in message');
-                return;
-            }
+            logger.info(
+                { repoId, prNumber, totalIssues: review.issues.length, uniqueIssues: uniqueIssues.length },
+                'Deduplicated and resolved line numbers for issues',
+            );
 
+            const summaryMessage = `## Code Review Summary\n\n${review.summary}\n\n### Strengths\n${review.strengths}\n\n### Issues Found: ${uniqueIssues.length}`;
+
+            await addJob(issuesQueue, 'pr-issues', {
+                owner,
+                repo,
+                prNumber,
+                userId,
+                commitSha,
+                issues: issuesWithLines,
+                summary: summaryMessage,
+            });
+            logger.info({ repoId, prNumber, issuesCount: issuesWithLines.length }, 'Sent issues and summary to queue');
+
+            let issuesWithMetadata: IssueWithMetadata[] = [];
             try {
-                logger.info({ repoId, prNumber }, 'Generating code review...');
-                const review = await generateCodeReview(title, description, context, diff);
-
-                const uniqueIssues = deduplicateIssues(review.issues);
-
-                const issuesWithLines = uniqueIssues
-                    .map((issue) => {
-                        const line = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
-                        return line !== null ? { ...issue, line } : null;
-                    })
-                    .filter((issue): issue is NonNullable<typeof issue> => issue !== null);
-
-                logger.info(
-                    { repoId, prNumber, totalIssues: review.issues.length, uniqueIssues: uniqueIssues.length },
-                    'Deduplicated and resolved line numbers for issues',
-                );
-
-                const messageKey = `${owner}/${repo}/${prNumber}`;
-
-                const summaryMessage = `## Code Review Summary\n\n${review.summary}\n\n### Strengths\n${review.strengths}\n\n### Issues Found: ${uniqueIssues.length}`;
-
-                await sendMessageWithKey(
-                    TOPIC_ISSUES,
-                    {
-                        owner,
-                        repo,
-                        prNumber,
-                        userId,
-                        commitSha,
-                        issues: issuesWithLines,
-                        summary: summaryMessage,
-                    },
-                    messageKey,
-                );
-                logger.info(
-                    { repoId, prNumber, issuesCount: issuesWithLines.length },
-                    'Sent issues and summary to Kafka',
-                );
-
-                let issuesWithMetadata: IssueWithMetadata[] = [];
-                try {
-                    issuesWithMetadata = issuesWithLines.map((issue) => {
-                        const severity =
-                            issue.severity === 'critical' ||
-                            issue.severity === 'warning' ||
-                            issue.severity === 'suggestion'
-                                ? issue.severity
-                                : 'warning';
-                        const commentBody = buildIssueComment({
-                            ...issue,
-                            severity,
-                        });
-                        return {
-                            file: issue.file,
-                            line: issue.line,
-                            severity: issue.severity,
-                            description: issue.description,
-                            commentBody,
-                            diff: {
-                                oldCode: issue.oldCode || '',
-                                newCode: issue.newCode || '',
-                            },
-                        };
+                issuesWithMetadata = issuesWithLines.map((issue) => {
+                    const severity =
+                        issue.severity === 'critical' || issue.severity === 'warning' || issue.severity === 'suggestion'
+                            ? issue.severity
+                            : 'warning';
+                    const commentBody = buildIssueComment({
+                        ...issue,
+                        severity,
                     });
-                } catch (metadataError) {
-                    logger.error({ metadataError }, 'Failed to create issues metadata, using fallback');
-                    issuesWithMetadata = issuesWithLines.map((issue) => ({
+                    return {
                         file: issue.file,
                         line: issue.line,
                         severity: issue.severity,
                         description: issue.description,
-                        commentBody: `${issue.file}:${issue.line} - ${issue.description}`,
+                        commentBody,
                         diff: {
                             oldCode: issue.oldCode || '',
                             newCode: issue.newCode || '',
                         },
-                    }));
-                }
+                    };
+                });
+            } catch (metadataError) {
+                logger.error({ metadataError }, 'Failed to create issues metadata, using fallback');
+                issuesWithMetadata = issuesWithLines.map((issue) => ({
+                    file: issue.file,
+                    line: issue.line,
+                    severity: issue.severity,
+                    description: issue.description,
+                    commentBody: `${issue.file}:${issue.line} - ${issue.description}`,
+                    diff: {
+                        oldCode: issue.oldCode || '',
+                        newCode: issue.newCode || '',
+                    },
+                }));
+            }
 
-                await prisma.review.update({
+            await prisma.review.update({
+                where: {
+                    repositoryId_prNumber: {
+                        repositoryId: repoId,
+                        prNumber,
+                    },
+                },
+                data: {
+                    status: 'completed',
+                    review: summaryMessage,
+                    issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
+                },
+            });
+            logger.info({ repoId, prNumber }, 'Updated review status to completed');
+        } catch (error) {
+            logger.error(
+                { error: String(error), repoId, prNumber, stack: error instanceof Error ? error.stack : undefined },
+                'Failed to generate/post review',
+            );
+
+            await prisma.review
+                .update({
                     where: {
                         repositoryId_prNumber: {
                             repositoryId: repoId,
@@ -201,48 +202,23 @@ async function startConsumer(): Promise<void> {
                         },
                     },
                     data: {
-                        status: 'completed',
-                        review: summaryMessage,
-                        issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
+                        status: 'failed',
                     },
+                })
+                .catch((err: unknown) => {
+                    logger.error({ err, repoId, prNumber }, 'Failed to update review status to failed');
                 });
-                logger.info({ repoId, prNumber }, 'Updated review status to completed');
-            } catch (error) {
-                logger.error(
-                    { error: String(error), repoId, prNumber, stack: error instanceof Error ? error.stack : undefined },
-                    'Failed to generate/post review',
-                );
-
-                await prisma.review
-                    .update({
-                        where: {
-                            repositoryId_prNumber: {
-                                repositoryId: repoId,
-                                prNumber,
-                            },
-                        },
-                        data: {
-                            status: 'failed',
-                        },
-                    })
-                    .catch((err: unknown) => {
-                        logger.error({ err, repoId, prNumber }, 'Failed to update review status to failed');
-                    });
-            }
-        },
+        }
     });
 
-    logger.info({ topic: TOPIC_REVIEW }, 'Kafka consumer started');
+    logger.info({ queue: QUEUE_NAME }, 'Queue worker started');
 }
 
 async function main(): Promise<void> {
     logger.info('AI Review Worker service starting...');
 
     try {
-        await ensureTopics([TOPIC_REVIEW, TOPIC_ISSUES]);
-        logger.info('[AI Review Worker] Topics ensured');
-
-        await startConsumer();
+        await startWorker();
     } catch (error) {
         logger.error({ error }, 'Failed to start AI Review Worker');
 
@@ -262,12 +238,14 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await aiReviewQueue.close();
+    await issuesQueue.close();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await aiReviewQueue.close();
+    await issuesQueue.close();
     process.exit(0);
 });

@@ -1,16 +1,16 @@
 import 'dotenv/config';
 import { generateEmbedding } from '@repo/ai';
 import prisma from '@repo/db';
-import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
+import { addJob, createQueue, createWorker } from '@repo/queue';
 import { Octokit } from 'octokit';
 import { indexCodebase } from './lib/embedding.js';
 import { type FileContent, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
 import { pineconeIndex } from './lib/pinecone.js';
 
-const TOPIC = 'repo.index';
-const CONTEXT_TOPIC = 'pr.context';
-const AI_REVIEW_TOPIC = 'pr.ai-review';
+const QUEUE_NAME = 'repo-index';
+const CONTEXT_QUEUE = 'pr-context';
+const AI_REVIEW_QUEUE = 'pr-ai-review';
 
 interface PRContextMessage {
     query: string;
@@ -22,6 +22,10 @@ interface PRContextMessage {
     diff: string;
     commitSha: string;
 }
+
+const repoIndexQueue = createQueue(QUEUE_NAME);
+const contextQueue = createQueue(CONTEXT_QUEUE);
+const aiReviewQueue = createQueue(AI_REVIEW_QUEUE);
 
 async function getAccessToken(userId: string): Promise<string | null> {
     try {
@@ -64,103 +68,68 @@ async function retrieveContext(query: string, repoId: string, topK: number = 5) 
     return results.matches.map((match) => match?.metadata?.content as string).filter(Boolean);
 }
 
-async function startContextConsumer(): Promise<void> {
-    const consumer = kafkaManager.consumer({
-        groupId: 'repo-indexer-context',
-        sessionTimeout: 300000,
-        heartbeatInterval: 30000,
+async function startContextWorker(): Promise<void> {
+    const worker = createWorker(CONTEXT_QUEUE, async (job) => {
+        const contextMessage = job.data as PRContextMessage;
+        logger.info({ contextMessage }, 'Received pr-context event');
+
+        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha } = contextMessage;
+        logger.info({ query, repoId }, 'Retrieving context for PR');
+
+        try {
+            const context = await retrieveContext(query, repoId);
+            logger.info({ repoId, prNumber, contextLength: context.length }, 'Retrieved context for PR');
+
+            await addJob(aiReviewQueue, 'pr-ai-review', {
+                title: query.split('\n')[0],
+                description: query.split('\n').slice(1).join('\n'),
+                context,
+                diff,
+                repoId,
+                owner,
+                repo,
+                prNumber,
+                userId,
+                commitSha,
+            });
+            logger.info({ repoId, prNumber }, 'Sent AI review message to queue');
+        } catch (error) {
+            logger.error({ error, repoId, prNumber }, 'Failed to retrieve context');
+        }
     });
 
-    await consumer.connect();
-    logger.info('[Repo Indexer] Context consumer connected to Kafka');
-
-    await consumer.subscribe({ topic: CONTEXT_TOPIC, fromBeginning: false });
-
-    await consumer.run({
-        eachMessage: async ({ message }) => {
-            const value = message.value?.toString();
-            if (!value) return;
-
-            const contextMessage = JSON.parse(value) as PRContextMessage;
-            logger.info({ contextMessage, offset: message.offset }, 'Received pr-context event');
-
-            const { query, repoId, owner, repo, prNumber, userId, diff, commitSha } = contextMessage;
-            logger.info({ query, repoId }, 'Retrieving context for PR');
-
-            try {
-                const context = await retrieveContext(query, repoId);
-                logger.info({ repoId, prNumber, contextLength: context.length }, 'Retrieved context for PR');
-
-                await sendMessage(AI_REVIEW_TOPIC, {
-                    title: query.split('\n')[0],
-                    description: query.split('\n').slice(1).join('\n'),
-                    context,
-                    diff,
-                    repoId,
-                    owner,
-                    repo,
-                    prNumber,
-                    userId,
-                    commitSha,
-                });
-                logger.info({ repoId, prNumber }, 'Sent AI review message to Kafka');
-            } catch (error) {
-                logger.error({ error, repoId, prNumber }, 'Failed to retrieve context');
-            }
-        },
-    });
-
-    logger.info({ topic: CONTEXT_TOPIC }, 'Context consumer started');
+    logger.info({ queue: CONTEXT_QUEUE }, 'Context worker started');
 }
 
-async function startConsumer(): Promise<void> {
-    const consumer = kafkaManager.consumer({
-        groupId: 'repo-indexer',
-        sessionTimeout: 300000,
-        heartbeatInterval: 30000,
+async function startWorker(): Promise<void> {
+    const worker = createWorker(QUEUE_NAME, async (job) => {
+        const repoDetailsWithUser = job.data as RepoDetails & { userId?: string };
+        const { userId, ...repoDetails } = repoDetailsWithUser;
+        logger.info({ repoDetails, userId }, 'Received index-repo event');
+
+        if (!userId) {
+            logger.error('No userId provided in message');
+            return;
+        }
+
+        const accessToken = await getAccessToken(userId);
+        if (!accessToken) {
+            logger.error({ userId }, 'No GitHub access token found for user');
+            return;
+        }
+
+        await indexRepository(repoDetails, accessToken);
     });
 
-    await consumer.connect();
-    logger.info('[Repo Indexer] Consumer connected to Kafka');
-
-    await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
-
-    await consumer.run({
-        eachMessage: async ({ message }) => {
-            const value = message.value?.toString();
-            if (!value) return;
-
-            const repoDetailsWithUser = JSON.parse(value) as RepoDetails & { userId?: string };
-            const { userId, ...repoDetails } = repoDetailsWithUser;
-            logger.info({ repoDetails, userId, offset: message.offset }, 'Received index-repo event');
-
-            if (!userId) {
-                logger.error('No userId provided in message');
-                return;
-            }
-
-            const accessToken = await getAccessToken(userId);
-            if (!accessToken) {
-                logger.error({ userId }, 'No GitHub access token found for user');
-                return;
-            }
-
-            await indexRepository(repoDetails, accessToken);
-        },
-    });
-
-    logger.info({ topic: TOPIC }, 'Kafka consumer started');
+    logger.info({ queue: QUEUE_NAME }, 'Worker started');
 }
 
 async function main(): Promise<void> {
     logger.info('Repo Indexer service starting...');
 
     try {
-        await ensureTopics([TOPIC, CONTEXT_TOPIC, AI_REVIEW_TOPIC]);
-        logger.info('[Repo Indexer] Topics ensured');
-
-        await startConsumer();
-        await startContextConsumer();
+        await startWorker();
+        await startContextWorker();
     } catch (error) {
         logger.error({ error }, 'Failed to start Repo Indexer');
 
@@ -180,12 +149,16 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await repoIndexQueue.close();
+    await contextQueue.close();
+    await aiReviewQueue.close();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await repoIndexQueue.close();
+    await contextQueue.close();
+    await aiReviewQueue.close();
     process.exit(0);
 });

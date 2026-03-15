@@ -1,12 +1,12 @@
 import 'dotenv/config';
 import prisma from '@repo/db';
-import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
+import { addJob, createQueue, createWorker } from '@repo/queue';
 import { Octokit } from 'octokit';
 
-const TOPIC = 'pr.review';
-const COMMENT_TOPIC = 'pr.comment';
-const CONTEXT_TOPIC = 'pr.context';
+const QUEUE_NAME = 'pr-review';
+const COMMENT_QUEUE = 'pr-comment';
+const CONTEXT_QUEUE = 'pr-context';
 
 interface PRReviewMessage {
     owner: string;
@@ -22,6 +22,10 @@ interface PRDetails {
     diff: string;
     commitSha: string;
 }
+
+const prReviewQueue = createQueue(QUEUE_NAME);
+const commentQueue = createQueue(COMMENT_QUEUE);
+const contextQueue = createQueue(CONTEXT_QUEUE);
 
 async function getAccessToken(userId: string): Promise<string | null> {
     try {
@@ -73,90 +77,75 @@ async function reviewPullRequest(
     };
 }
 
-async function startConsumer(): Promise<void> {
-    const consumer = kafkaManager.consumer({
-        groupId: 'pr-processor',
-        sessionTimeout: 300000,
-        heartbeatInterval: 30000,
-    });
+async function startWorker(): Promise<void> {
+    const worker = createWorker(QUEUE_NAME, async (job) => {
+        const prDetails = job.data as PRReviewMessage;
+        logger.info({ prDetails }, 'Received pr-review event');
 
-    await consumer.connect();
-    logger.info('[PR Processor] Consumer connected to Kafka');
+        const { owner, repo, prNumber, userId } = prDetails;
 
-    await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
+        if (!userId) {
+            logger.error('No userId provided in message');
+            return;
+        }
 
-    await consumer.run({
-        eachMessage: async ({ message }) => {
-            const value = message.value?.toString();
-            if (!value) return;
+        const accessToken = await getAccessToken(userId);
+        if (!accessToken) {
+            logger.error({ userId }, 'No GitHub access token found for user');
+            return;
+        }
 
-            const prDetails = JSON.parse(value) as PRReviewMessage;
-            logger.info({ prDetails, offset: message.offset }, 'Received pr-review event');
+        try {
+            const prData = await reviewPullRequest(owner, repo, prNumber, accessToken);
 
-            const { owner, repo, prNumber, userId } = prDetails;
+            const query = `${prData.prTitle}\n${prData.prBody}`;
+            logger.info({ query }, 'Generated query for context retrieval');
 
-            if (!userId) {
-                logger.error('No userId provided in message');
-                return;
-            }
+            const repository = await prisma.repository.findFirst({
+                where: { owner, name: repo, userId },
+            });
 
-            const accessToken = await getAccessToken(userId);
-            if (!accessToken) {
-                logger.error({ userId }, 'No GitHub access token found for user');
-                return;
-            }
-
-            try {
-                const prData = await reviewPullRequest(owner, repo, prNumber, accessToken);
-
-                const query = `${prData.prTitle}\n${prData.prBody}`;
-                logger.info({ query }, 'Generated query for context retrieval');
-
-                const repository = await prisma.repository.findFirst({
-                    where: { owner, name: repo, userId },
-                });
-
-                if (repository) {
-                    await prisma.review.upsert({
-                        where: {
-                            repositoryId_prNumber: {
-                                repositoryId: repository.id,
-                                prNumber,
-                            },
-                        },
-                        create: {
+            if (repository) {
+                await prisma.review.upsert({
+                    where: {
+                        repositoryId_prNumber: {
                             repositoryId: repository.id,
                             prNumber,
-                            prTitle: prData.prTitle,
-                            prUrl: prData.prUrl,
-                            review: '',
-                            issues: [],
-                            status: 'pending',
                         },
-                        update: {
-                            status: 'pending',
-                        },
-                    });
-
-                    await sendMessage(CONTEXT_TOPIC, {
-                        query,
-                        repoId: repository.id,
-                        owner,
-                        repo,
+                    },
+                    create: {
+                        repositoryId: repository.id,
                         prNumber,
-                        userId,
-                        diff: prData.diff,
-                        commitSha: prData.commitSha,
-                    });
-                    logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to Kafka');
-                }
+                        prTitle: prData.prTitle,
+                        prUrl: prData.prUrl,
+                        review: '',
+                        issues: [],
+                        status: 'pending',
+                    },
+                    update: {
+                        status: 'pending',
+                    },
+                });
 
-                await sendMessage(COMMENT_TOPIC, {
+                await addJob(contextQueue, 'pr-context', {
+                    query,
+                    repoId: repository.id,
                     owner,
                     repo,
                     prNumber,
                     userId,
-                    comment: `> [!NOTE]
+                    diff: prData.diff,
+                    commitSha: prData.commitSha,
+                });
+                logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to queue');
+            }
+
+            await addJob(commentQueue, 'pr-comment', {
+                owner,
+                repo,
+                prNumber,
+                userId,
+                comment: `> [!NOTE]
 > Currently processing new changes in this PR. This may take a few minutes, please wait...
 >
 > \`\`\`ascii
@@ -168,53 +157,49 @@ async function startConsumer(): Promise<void> {
 >         (•ㅅ•)
 >         /　 づ
 > \`\`\``,
-                });
+            });
 
-                logger.info({ owner, repo, prNumber }, 'Sent initial comment message to Kafka');
-            } catch (error) {
-                logger.error({ error, owner, repo, prNumber }, 'Failed to review pull request');
+            logger.info({ owner, repo, prNumber }, 'Sent initial comment message to queue');
+        } catch (error) {
+            logger.error({ error, owner, repo, prNumber }, 'Failed to review pull request');
 
-                const repository = await prisma.repository.findFirst({
-                    where: { owner, name: repo, userId },
-                });
+            const repository = await prisma.repository.findFirst({
+                where: { owner, name: repo, userId },
+            });
 
-                if (repository) {
-                    await prisma.review.upsert({
-                        where: {
-                            repositoryId_prNumber: {
-                                repositoryId: repository.id,
-                                prNumber,
-                            },
-                        },
-                        create: {
+            if (repository) {
+                await prisma.review.upsert({
+                    where: {
+                        repositoryId_prNumber: {
                             repositoryId: repository.id,
                             prNumber,
-                            prTitle: `PR #${prNumber}`,
-                            prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-                            review: '',
-                            status: 'failed',
                         },
-                        update: {
-                            status: 'failed',
-                        },
-                    });
-                    logger.info({ repositoryId: repository.id, prNumber }, 'Created failed review record');
-                }
+                    },
+                    create: {
+                        repositoryId: repository.id,
+                        prNumber,
+                        prTitle: `PR #${prNumber}`,
+                        prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+                        review: '',
+                        status: 'failed',
+                    },
+                    update: {
+                        status: 'failed',
+                    },
+                });
+                logger.info({ repositoryId: repository.id, prNumber }, 'Created failed review record');
             }
-        },
+        }
     });
 
-    logger.info({ topic: TOPIC }, 'Kafka consumer started');
+    logger.info({ queue: QUEUE_NAME }, 'Queue worker started');
 }
 
 async function main(): Promise<void> {
     logger.info('PR Processor service starting...');
 
     try {
-        await ensureTopics([TOPIC, COMMENT_TOPIC, CONTEXT_TOPIC]);
-        logger.info('[PR Processor] Topics ensured');
-
-        await startConsumer();
+        await startWorker();
     } catch (error) {
         logger.error({ error }, 'Failed to start PR processor');
 
@@ -234,12 +219,16 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await prReviewQueue.close();
+    await commentQueue.close();
+    await contextQueue.close();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await prReviewQueue.close();
+    await commentQueue.close();
+    await contextQueue.close();
     process.exit(0);
 });

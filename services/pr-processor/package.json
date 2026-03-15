@@ -14,8 +14,8 @@
     "dependencies": {
         "@repo/ai": "workspace:*",
         "@repo/db": "workspace:*",
-        "@repo/kafka": "workspace:*",
         "@repo/logger": "workspace:*",
+        "@repo/queue": "workspace:*",
         "cors": "^2.8.6",
         "dotenv": "^17.3.1",
         "express": "^5.2.1",

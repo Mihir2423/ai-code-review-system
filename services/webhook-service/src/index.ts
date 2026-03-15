@@ -1,14 +1,16 @@
 import 'dotenv/config';
 import prisma from '@repo/db';
-import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
+import { addJob, createQueue } from '@repo/queue';
 import express from 'express';
 
-const TOPIC = 'pr.review';
+const QUEUE_NAME = 'pr-review';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || 'development-secret';
+
+const prReviewQueue = createQueue(QUEUE_NAME);
 
 app.use(express.json());
 
@@ -42,14 +44,14 @@ app.post('/api/webhooks/github', async (req, res) => {
                 if (repository) {
                     logger.info({ repositoryId: repository.id, fullName }, 'Repository found in database');
 
-                    await sendMessage(TOPIC, {
+                    await addJob(prReviewQueue, 'pr-review', {
                         owner,
                         repo: repoName,
                         prNumber: pr?.number,
                         userId: repository.userId,
                     });
 
-                    logger.info({ owner, repo: repoName, prNumber: pr?.number }, 'Sent PR review message to Kafka');
+                    logger.info({ owner, repo: repoName, prNumber: pr?.number }, 'Sent PR review message to queue');
                 } else {
                     logger.warn({ fullName }, 'Repository not found in database');
                 }
@@ -66,19 +68,6 @@ app.post('/api/webhooks/github', async (req, res) => {
 });
 
 async function main(): Promise<void> {
-    try {
-        await ensureTopics([TOPIC]);
-        logger.info('[Webhook Service] Topics ensured');
-    } catch (error) {
-        logger.error({ error }, 'Failed to ensure topics, retrying in 5s...');
-
-        setTimeout(() => {
-            ensureTopics([TOPIC]).catch((err) => {
-                logger.error({ error: err }, 'Failed to ensure topics on retry');
-            });
-        }, 5000);
-    }
-
     app.listen(PORT, () => {
         logger.info({ port: PORT }, 'Webhook service started');
     });
@@ -88,12 +77,12 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await prReviewQueue.close();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
-    await kafkaManager.disconnect();
+    await prReviewQueue.close();
     process.exit(0);
 });

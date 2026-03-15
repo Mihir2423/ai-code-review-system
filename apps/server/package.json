@@ -13,8 +13,8 @@
     "packageManager": "pnpm@10.17.1",
     "dependencies": {
         "@repo/db": "workspace:*",
-        "@repo/kafka": "workspace:*",
         "@repo/logger": "workspace:*",
+        "@repo/queue": "workspace:*",
         "@repo/redis": "workspace:*",
         "@repo/types": "workspace:*",
         "better-auth": "^1.4.3",
