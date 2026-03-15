@@ -29,7 +29,7 @@ export const createWorker = (
 ) => {
     return new Worker(name, processor, {
         connection: createConnection(),
-        concurrency: options?.concurrency || 1,
+        concurrency: options?.concurrency || 5,
     });
 };
 
