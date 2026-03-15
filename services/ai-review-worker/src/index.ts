@@ -4,7 +4,6 @@ import { generateCodeReview, type ReviewIssue } from '@repo/ai';
 import prisma from '@repo/db';
 import { ensureTopics, kafkaManager, sendMessageWithKey } from '@repo/kafka';
 import { logger } from '@repo/logger';
-import type { IssueWithMetadata } from '@repo/types';
 
 const TOPIC_REVIEW = 'pr.ai-review';
 const TOPIC_ISSUES = 'pr.issues';
@@ -25,7 +24,7 @@ interface AIReviewMessage {
 function findLineNumberInDiff(diff: string, file: string, code: string): number {
     const lines = diff.split('\n');
     let currentFile = '';
-    let lineNumber = 0;
+    let hunkStartLine = 0;
 
     const cleanCode = code
         .replace(/^```[\w]*\n?/, '')
@@ -41,34 +40,19 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
             if (match && match[1]) currentFile = match[1];
         } else if (line.startsWith('@@')) {
             const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
-            if (match && match[1]) lineNumber = parseInt(match[1], 10);
+            if (match && match[1]) hunkStartLine = parseInt(match[1], 10);
         } else if (currentFile === file) {
             const strippedLine = line.replace(/^[+-]\s?/, '');
             if (strippedLine.includes(searchCode)) {
-                return lineNumber;
+                return hunkStartLine;
             }
             if (line.startsWith('+') || line.startsWith(' ')) {
-                lineNumber++;
+                hunkStartLine++;
             }
         }
     }
 
     return 1;
-}
-
-function buildIssueComment(issue: ReviewIssue & { line: number }): string {
-    const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵';
-
-    const oldCode = issue.oldCode || 'N/A';
-    const newCode = issue.newCode || 'N/A';
-    const changeDisplay =
-        issue.oldCode && issue.newCode
-            ? `\`${oldCode}\` → \`${newCode}\``
-            : issue.oldCode
-              ? `Removed: \`${oldCode}\``
-              : `Added: \`${newCode}\``;
-
-    return `${emoji} **${issue.severity.toUpperCase()}** at ${issue.file}:${issue.line}\n\n${issue.description}\n\n**Change:** ${changeDisplay}\n\n**Suggestion:** ${issue.suggestion}`;
 }
 
 function createIssueHash(issue: ReviewIssue): string {
@@ -161,46 +145,6 @@ async function startConsumer(): Promise<void> {
                     'Sent issues and summary to Kafka',
                 );
 
-                let issuesWithMetadata: IssueWithMetadata[] = [];
-                try {
-                    issuesWithMetadata = issuesWithLines.map((issue) => {
-                        const severity =
-                            issue.severity === 'critical' ||
-                            issue.severity === 'warning' ||
-                            issue.severity === 'suggestion'
-                                ? issue.severity
-                                : 'warning';
-                        const commentBody = buildIssueComment({
-                            ...issue,
-                            severity,
-                        });
-                        return {
-                            file: issue.file,
-                            line: issue.line,
-                            severity: issue.severity,
-                            description: issue.description,
-                            commentBody,
-                            diff: {
-                                oldCode: issue.oldCode || '',
-                                newCode: issue.newCode || '',
-                            },
-                        };
-                    });
-                } catch (metadataError) {
-                    logger.error({ metadataError }, 'Failed to create issues metadata, using fallback');
-                    issuesWithMetadata = issuesWithLines.map((issue) => ({
-                        file: issue.file,
-                        line: issue.line,
-                        severity: issue.severity,
-                        description: issue.description,
-                        commentBody: `${issue.file}:${issue.line} - ${issue.description}`,
-                        diff: {
-                            oldCode: issue.oldCode || '',
-                            newCode: issue.newCode || '',
-                        },
-                    }));
-                }
-
                 await prisma.review.update({
                     where: {
                         repositoryId_prNumber: {
@@ -211,7 +155,7 @@ async function startConsumer(): Promise<void> {
                     data: {
                         status: 'completed',
                         review: summaryMessage,
-                        issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
+                        issues: issuesWithLines.map((i) => `${i.file}:${i.line} - ${i.description}`),
                     },
                 });
                 logger.info({ repoId, prNumber }, 'Updated review status to completed');

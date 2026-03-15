@@ -68,13 +68,6 @@ async function postInlineComment(
 ): Promise<void> {
     const octokit = new Octokit({ auth: accessToken });
 
-    const { data: pr } = await octokit.rest.pulls.get({
-        owner,
-        repo,
-        pull_number: prNumber,
-    });
-    const latestCommitSha = pr.head.sha;
-
     const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵';
 
     const oldCode = issue.oldCode || 'N/A';
@@ -93,7 +86,7 @@ async function postInlineComment(
         owner,
         repo,
         pull_number: prNumber,
-        commit_id: latestCommitSha,
+        commit_id: commitSha,
         path: issue.file,
         line: issue.line,
         side,
