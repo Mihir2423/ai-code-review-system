@@ -2,7 +2,13 @@ import type { Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import { FailResponse, SuccessResponse } from '../../utils/response-helpers.js';
-import { connectRepository, getAllRepositories, getConnectedRepositories, getGitHubStats } from './service.js';
+import {
+    connectRepository,
+    getAllRepositories,
+    getConnectedRepositories,
+    getGitHubStats,
+    reindexRepository,
+} from './service.js';
 
 export async function getStats(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -149,6 +155,52 @@ export async function getConnectedRepos(req: AuthenticatedRequest, res: Response
         res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(
             new FailResponse.Builder()
                 .withMessage('Failed to fetch connected repositories')
+                .withContent({ error: error instanceof Error ? error.message : 'Unknown error' })
+                .build(),
+        );
+    }
+}
+
+export async function reindexRepo(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+        const userId = req.user?.id;
+        const { repoId } = req.body;
+
+        if (!userId) {
+            res.status(StatusCodes.UNAUTHORIZED).json(
+                new FailResponse.Builder().withMessage('Unauthorized').withContent({ error: 'Unauthorized' }).build(),
+            );
+            return;
+        }
+
+        if (!repoId) {
+            res.status(StatusCodes.BAD_REQUEST).json(
+                new FailResponse.Builder()
+                    .withMessage('Repository ID is required')
+                    .withContent({ error: 'Repository ID is required' })
+                    .build(),
+            );
+            return;
+        }
+
+        const repository = await reindexRepository(repoId, userId);
+        res.status(StatusCodes.OK).json(
+            new SuccessResponse.Builder().withMessage('Repository reindexing started').withContent(repository).build(),
+        );
+    } catch (error) {
+        if (error instanceof Error && error.message === 'Repository not found') {
+            res.status(StatusCodes.NOT_FOUND).json(
+                new FailResponse.Builder()
+                    .withMessage('Repository not found')
+                    .withContent({ error: 'Repository not found' })
+                    .build(),
+            );
+            return;
+        }
+
+        res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(
+            new FailResponse.Builder()
+                .withMessage('Failed to reindex repository')
                 .withContent({ error: error instanceof Error ? error.message : 'Unknown error' })
                 .build(),
         );

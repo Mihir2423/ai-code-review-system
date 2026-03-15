@@ -1,18 +1,65 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+    ArrowUpDown,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
+    RefreshCw,
+    Search,
+} from 'lucide-react';
 import { useState } from 'react';
-import { fetchConnectedRepositories } from '@/lib/github/github-repositories';
+import { fetchConnectedRepositories, reindexRepository } from '@/lib/github/github-repositories';
 import { AddRepositoriesButton } from './add-repositories-button';
+
+interface Repository {
+    id: string;
+    fullName: string;
+    indexingStatus: string;
+}
 
 export function DashboardContent() {
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    const queryClient = useQueryClient();
 
-    const { data: connectedRepos, isLoading } = useQuery({
+    const {
+        data: connectedRepos,
+        isLoading,
+        refetch,
+    } = useQuery({
         queryKey: ['connected-repositories'],
         queryFn: fetchConnectedRepositories,
+        refetchInterval: 5000,
     });
+
+    const handleRetry = async (repoId: string) => {
+        try {
+            await reindexRepository(repoId);
+            queryClient.invalidateQueries({ queryKey: ['connected-repositories'] });
+        } catch (error) {
+            console.error('Failed to reindex:', error);
+        }
+    };
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'completed':
+                return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Indexed</span>;
+            case 'in_progress':
+                return (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">Indexing...</span>
+                );
+            case 'failed':
+                return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Failed</span>;
+            default:
+                return (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">Pending</span>
+                );
+        }
+    };
 
     return (
         <main className="flex-1 overflow-y-auto px-8 py-6">
@@ -45,7 +92,7 @@ export function DashboardContent() {
 
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1a1a20' }}>
                 <div
-                    className="flex items-center px-4 py-2.5"
+                    className="flex items-center justify-between px-4 py-2.5"
                     style={{
                         background: '#0e0e12',
                         borderBottom: '1px solid #1a1a20',
@@ -64,6 +111,9 @@ export function DashboardContent() {
                         Repository
                         <ArrowUpDown size={12} color="#505058" />
                     </button>
+                    <span className="text-xs font-medium" style={{ color: '#808088' }}>
+                        Status
+                    </span>
                 </div>
 
                 {isLoading ? (
@@ -72,11 +122,11 @@ export function DashboardContent() {
                     </div>
                 ) : connectedRepos && connectedRepos.length > 0 ? (
                     connectedRepos.map((repo: unknown) => {
-                        const r = repo as { fullName: string };
+                        const r = repo as Repository;
                         return (
                             <div
-                                key={r.fullName}
-                                className="flex items-center px-4 py-3.5 cursor-pointer transition-colors"
+                                key={r.id}
+                                className="flex items-center justify-between px-4 py-3.5 cursor-pointer transition-colors"
                                 style={{ borderBottom: '1px solid #13131a' }}
                                 onMouseEnter={(e) => (e.currentTarget.style.background = '#0e0e14')}
                                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -84,6 +134,27 @@ export function DashboardContent() {
                                 <span className="text-sm font-medium" style={{ color: '#7ab4f5' }}>
                                     {r.fullName}
                                 </span>
+                                <div className="flex items-center gap-2">
+                                    {getStatusBadge(r.indexingStatus)}
+                                    {r.indexingStatus === 'failed' && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleRetry(r.id);
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 rounded text-xs"
+                                            style={{
+                                                background: '#242424',
+                                                color: '#c0c0c8',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <RefreshCw size={12} />
+                                            Retry
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         );
                     })

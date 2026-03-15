@@ -80,6 +80,7 @@ model Repository {
   fullName              String
   url                   String
   userId                String
+  indexingStatus        String @default("pending") // pending, in_progress, completed, failed
   reviews               Review[]
   user                  User @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt             DateTime  @default(now())

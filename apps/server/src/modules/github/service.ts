@@ -73,6 +73,7 @@ export async function connectRepository(userId: string, owner: string, repo: str
             fullName: `${owner}/${repo}`,
             url: `https://github.com/${owner}/${repo}/`,
             userId,
+            indexingStatus: 'pending',
         },
     });
 
@@ -338,4 +339,29 @@ export async function getAllRepositories(userId: string, cursor?: string): Promi
             endCursor: data.user.repositories.pageInfo.endCursor,
         },
     };
+}
+
+export async function reindexRepository(repoId: string, userId: string) {
+    const repository = await prisma.repository.findFirst({
+        where: { id: repoId, userId },
+    });
+
+    if (!repository) {
+        throw new Error('Repository not found');
+    }
+
+    await prisma.repository.update({
+        where: { id: repoId },
+        data: { indexingStatus: 'pending' },
+    });
+
+    await sendMessage(TOPIC, {
+        repoId: repository.id,
+        owner: repository.owner,
+        repo: repository.name,
+        url: repository.url,
+        userId,
+    });
+
+    return repository;
 }

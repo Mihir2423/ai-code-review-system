@@ -4,7 +4,7 @@ import prisma from '@repo/db';
 import { ensureTopics, kafkaManager, sendMessage } from '@repo/kafka';
 import { logger } from '@repo/logger';
 import { Octokit } from 'octokit';
-import { indexCodebase } from './lib/embedding.js';
+import { deleteVectorsByRepoId, indexCodebase } from './lib/embedding.js';
 import { type FileContent, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
 import { pineconeIndex } from './lib/pinecone.js';
 
@@ -36,20 +36,75 @@ async function getAccessToken(userId: string): Promise<string | null> {
     }
 }
 
-async function indexRepository(repoDetails: RepoDetails, accessToken: string): Promise<void> {
-    const octokit = new Octokit({ auth: accessToken });
+async function indexRepository(repoDetails: RepoDetails, accessToken: string, isRetry: boolean = false): Promise<void> {
+    try {
+        await prisma.repository.update({
+            where: { id: repoDetails.repoId },
+            data: { indexingStatus: 'in_progress' },
+        });
+    } catch (error) {
+        logger.error({ error, repoId: repoDetails.repoId }, 'Failed to update indexing status to in_progress');
+    }
 
-    const files = await fetchRepositoryFiles(octokit, repoDetails, async (file: FileContent) => {
-        logger.info({ path: file.path, size: file.size }, 'Processing file');
-    });
+    try {
+        if (!isRetry) {
+            await deleteVectorsByRepoId(repoDetails.repoId);
+        }
 
-    logger.info({ repoDetails, totalFiles: files.length }, 'Fetched all files from repository');
+        const octokit = new Octokit({ auth: accessToken });
 
-    await indexCodebase(files, {
-        repoId: repoDetails.repoId,
-        owner: repoDetails.owner,
-        repo: repoDetails.repo,
-    });
+        const files = await fetchRepositoryFiles(octokit, repoDetails, async (file: FileContent) => {
+            logger.info({ path: file.path, size: file.size }, 'Processing file');
+        });
+
+        logger.info({ repoDetails, totalFiles: files.length }, 'Fetched all files from repository');
+
+        await indexCodebase(files, {
+            repoId: repoDetails.repoId,
+            owner: repoDetails.owner,
+            repo: repoDetails.repo,
+        });
+
+        try {
+            await prisma.repository.update({
+                where: { id: repoDetails.repoId },
+                data: { indexingStatus: 'completed' },
+            });
+        } catch (error) {
+            logger.error({ error, repoId: repoDetails.repoId }, 'Failed to update indexing status to completed');
+        }
+
+        logger.info({ repoId: repoDetails.repoId }, 'Successfully indexed repository');
+    } catch (error) {
+        logger.error({ error, repoDetails }, 'Failed to index repository');
+
+        let statusValue = 'failed';
+
+        if (error instanceof Error) {
+            if (
+                error.message.includes('rate limit') ||
+                error.message.includes('RESOURCE_EXHAUSTED') ||
+                error.message.includes('429')
+            ) {
+                statusValue = 'pending';
+                logger.info({ repoId: repoDetails.repoId }, 'Rate limit hit, setting status to pending for retry');
+            }
+        }
+
+        try {
+            await prisma.repository.update({
+                where: { id: repoDetails.repoId },
+                data: { indexingStatus: statusValue },
+            });
+        } catch (statusError) {
+            logger.error(
+                { error: statusError, repoId: repoDetails.repoId },
+                'Failed to update indexing status to failed',
+            );
+        }
+
+        throw error;
+    }
 }
 
 async function retrieveContext(query: string, repoId: string, topK: number = 5) {
@@ -145,7 +200,32 @@ async function startConsumer(): Promise<void> {
                 return;
             }
 
-            await indexRepository(repoDetails, accessToken);
+            let isRetry = false;
+            try {
+                const repo = await prisma.repository.findUnique({
+                    where: { id: repoDetails.repoId },
+                    select: { indexingStatus: true },
+                });
+                isRetry = repo?.indexingStatus === 'pending' || repo?.indexingStatus === 'failed';
+            } catch (error) {
+                logger.error({ error, repoDetails }, 'Failed to index repository');
+
+                try {
+                    await prisma.repository.update({
+                        where: { id: repoDetails.repoId },
+                        data: { indexingStatus: 'failed' },
+                    });
+                } catch (statusError) {
+                    logger.error(
+                        { error: statusError, repoId: repoDetails.repoId },
+                        'Failed to update indexing status to failed',
+                    );
+                }
+
+                throw error;
+            }
+
+            await indexRepository(repoDetails, accessToken, isRetry);
         },
     });
 
