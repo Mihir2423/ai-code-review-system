@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { google } from '@ai-sdk/google';
 import { logger } from '@repo/logger';
 import { embed, generateText } from 'ai';
+import { jsonrepair } from 'jsonrepair';
 
 export interface ReviewIssue {
     file: string;
@@ -35,6 +36,7 @@ export interface RepoDetails {
     repo: string;
 }
 
+
 export async function generateCodeReview(
     title: string,
     description: string,
@@ -65,8 +67,8 @@ Analyze the changes and return a JSON object with the following structure:
       "file": "filename.ts",
       "severity": "critical|warning|suggestion",
       "description": "What's wrong - be specific and concise",
-      "oldCode": "exact code that was removed (leave empty if new code only), format as \`\`\`ts\\ncode here\\n\`\`\`",
-      "newCode": "exact code that was added (leave empty if removal only), format as \`\`\`ts\\ncode here\\n\`\`\`",
+      "oldCode": "exact code that was removed (plain code, no markdown fences)",
+      "newCode": "exact code that was added (plain code, no markdown fences)",
       "suggestion": "how to fix it - be specific"
     }
   ],
@@ -89,23 +91,15 @@ Return ONLY valid JSON, no markdown formatting.`;
     });
 
     try {
-        let cleanedText = text.trim();
+      let cleanedText = text.trim();
 
-        // Strip opening fence (e.g. ```json\n or ```\n)
-        cleanedText = cleanedText
-            .replace(/^```[\w]*\n?/, '')
-            .replace(/\n?```$/, '')
-            .trim();
-
-        // Extract outermost JSON object
-        const startIdx = cleanedText.indexOf('{');
-        const endIdx = cleanedText.lastIndexOf('}');
-        if (startIdx === -1 || endIdx === -1) {
-            throw new Error('No JSON object found in response');
-        }
-        cleanedText = cleanedText.slice(startIdx, endIdx + 1);
-
-        const result = JSON.parse(cleanedText) as ReviewResult;
+       const startIdx = cleanedText.indexOf('{');
+       const endIdx = cleanedText.lastIndexOf('}');
+       if (startIdx === -1 || endIdx === -1) {
+           throw new Error('No JSON object found in response');
+       }
+       cleanedText = cleanedText.slice(startIdx, endIdx + 1);
+       const result = JSON.parse(jsonrepair(cleanedText)) as ReviewResult;
 
         if (!Array.isArray(result.issues)) result.issues = [];
         if (!Array.isArray(result.suggestions)) result.suggestions = [];

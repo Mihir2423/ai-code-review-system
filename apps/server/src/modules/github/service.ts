@@ -1,10 +1,12 @@
 import prisma from '@repo/db';
-import { sendMessage } from '@repo/kafka';
+import { addJob, createQueue } from '@repo/queue';
 import { redis } from '@repo/redis';
 import type { GitHubRepository, GitHubStats } from '@repo/types';
 import { Octokit } from 'octokit';
 
-const TOPIC = 'repo.index';
+const QUEUE_NAME = 'repo-index';
+
+const repoIndexQueue = createQueue(QUEUE_NAME);
 
 const STATS_CACHE_TTL = 30 * 60;
 const REPOS_CACHE_TTL = 15 * 60;
@@ -76,7 +78,7 @@ export async function connectRepository(userId: string, owner: string, repo: str
         },
     });
 
-    await sendMessage(TOPIC, {
+    await addJob(repoIndexQueue, 'repo-index', {
         repoId: repository.id,
         owner,
         repo,
