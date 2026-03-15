@@ -35,6 +35,45 @@ export interface RepoDetails {
     repo: string;
 }
 
+function sanitizeJsonString(jsonStr: string): string {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < jsonStr.length; i++) {
+        const char = jsonStr[i];
+
+        if (escaped) {
+            result += char;
+            escaped = false;
+            continue;
+        }
+
+        if (char === '\\' && inString) {
+            result += char;
+            escaped = true;
+            continue;
+        }
+
+        if (char === '"') {
+            inString = !inString;
+            result += char;
+            continue;
+        }
+
+        if (inString) {
+            if (char === '\n')      result += '\\n';
+            else if (char === '\r') result += '\\r';
+            else if (char === '\t') result += '\\t';
+            else                    result += char;
+        } else {
+            result += char;
+        }
+    }
+
+    return result;
+}
+
 export async function generateCodeReview(
     title: string,
     description: string,
@@ -104,6 +143,8 @@ Return ONLY valid JSON, no markdown formatting.`;
             throw new Error('No JSON object found in response');
         }
         cleanedText = cleanedText.slice(startIdx, endIdx + 1);
+
+        cleanedText = sanitizeJsonString(cleanedText);
 
         const result = JSON.parse(cleanedText) as ReviewResult;
 
