@@ -38,3 +38,15 @@ export interface GitHubStats {
     repos: RepoStats;
     commits: CommitStats;
 }
+
+export interface IssueWithMetadata {
+    file: string;
+    line: number;
+    severity: string;
+    description: string;
+    commentBody: string;
+    diff: {
+        oldCode: string;
+        newCode: string;
+    };
+}

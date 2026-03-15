@@ -3,8 +3,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { authClient } from './auth-client';
 
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+export interface IssueWithMetadata {
+    file: string;
+    line: number;
+    severity: string;
+    description: string;
+    commentBody: string;
+    diff: {
+        oldCode: string;
+        newCode: string;
+    };
+}
 
 export interface ReviewHistoryItem {
     id: string;
@@ -12,7 +23,7 @@ export interface ReviewHistoryItem {
     prTitle: string;
     prUrl: string;
     review: string;
-    issues: string[];
+    issues: IssueWithMetadata[];
     status: string;
     createdAt: Date;
     updatedAt: Date;
@@ -37,7 +48,6 @@ export async function fetchReviewHistory(): Promise<ReviewHistoryItem[]> {
         },
         credentials: 'include',
     });
-
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to fetch review history');
@@ -49,7 +59,23 @@ export async function fetchReviewHistory(): Promise<ReviewHistoryItem[]> {
         throw new Error(result.message || 'Failed to fetch review history');
     }
 
-    return result.content;
+    return result.content.map((item: ReviewHistoryItem & { issues: string[] }) => ({
+        ...item,
+        issues: item.issues.map((issueStr: string) => {
+            try {
+                return JSON.parse(issueStr) as IssueWithMetadata;
+            } catch {
+                return {
+                    file: '',
+                    line: 0,
+                    severity: 'warning',
+                    description: issueStr,
+                    commentBody: issueStr,
+                    diff: { oldCode: '', newCode: '' },
+                } as IssueWithMetadata;
+            }
+        }),
+    }));
 }
 
 export function useReviewHistory() {
