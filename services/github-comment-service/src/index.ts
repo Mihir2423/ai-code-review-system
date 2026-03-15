@@ -7,6 +7,9 @@ import { Octokit } from 'octokit';
 const ISSUES_QUEUE = 'pr-issues';
 const COMMENT_QUEUE = 'pr-comment';
 
+let issuesWorker: ReturnType<typeof createWorker>;
+let commentWorker: ReturnType<typeof createWorker>;
+
 interface CommentMessage {
     owner: string;
     repo: string;
@@ -106,7 +109,7 @@ async function postInlineComment(
 }
 
 async function startIssuesWorker(): Promise<void> {
-    const worker = createWorker(ISSUES_QUEUE, async (job) => {
+    issuesWorker = createWorker(ISSUES_QUEUE, async (job) => {
         const prIssues = job.data as PRIssuesMessage;
         logger.info({ prIssues }, 'Received pr-issues event');
 
@@ -152,7 +155,7 @@ async function startIssuesWorker(): Promise<void> {
 }
 
 async function startCommentWorker(): Promise<void> {
-    const worker = createWorker(COMMENT_QUEUE, async (job) => {
+    commentWorker = createWorker(COMMENT_QUEUE, async (job) => {
         const commentMsg = job.data as CommentMessage;
         logger.info({ commentMsg }, 'Received pr-comment event');
 
@@ -204,10 +207,14 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
+    await issuesWorker?.close();
+    await commentWorker?.close();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
+    await issuesWorker?.close();
+    await commentWorker?.close();
     process.exit(0);
 });

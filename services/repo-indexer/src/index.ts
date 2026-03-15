@@ -27,6 +27,9 @@ const repoIndexQueue = createQueue(QUEUE_NAME);
 const contextQueue = createQueue(CONTEXT_QUEUE);
 const aiReviewQueue = createQueue(AI_REVIEW_QUEUE);
 
+let repoIndexWorker: ReturnType<typeof createWorker>;
+let contextWorker: ReturnType<typeof createWorker>;
+
 async function getAccessToken(userId: string): Promise<string | null> {
     try {
         const account = await prisma.account.findFirst({
@@ -69,7 +72,7 @@ async function retrieveContext(query: string, repoId: string, topK: number = 5) 
 }
 
 async function startContextWorker(): Promise<void> {
-    const worker = createWorker(CONTEXT_QUEUE, async (job) => {
+    contextWorker = createWorker(CONTEXT_QUEUE, async (job) => {
         const contextMessage = job.data as PRContextMessage;
         logger.info({ contextMessage }, 'Received pr-context event');
 
@@ -102,7 +105,7 @@ async function startContextWorker(): Promise<void> {
 }
 
 async function startWorker(): Promise<void> {
-    const worker = createWorker(QUEUE_NAME, async (job) => {
+    repoIndexWorker = createWorker(QUEUE_NAME, async (job) => {
         const repoDetailsWithUser = job.data as RepoDetails & { userId?: string };
         const { userId, ...repoDetails } = repoDetailsWithUser;
         logger.info({ repoDetails, userId }, 'Received index-repo event');
@@ -149,6 +152,8 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
+    await repoIndexWorker?.close();
+    await contextWorker?.close();
     await repoIndexQueue.close();
     await contextQueue.close();
     await aiReviewQueue.close();
@@ -157,6 +162,8 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
+    await repoIndexWorker?.close();
+    await contextWorker?.close();
     await repoIndexQueue.close();
     await contextQueue.close();
     await aiReviewQueue.close();

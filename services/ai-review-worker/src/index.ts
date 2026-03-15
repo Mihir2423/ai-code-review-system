@@ -25,6 +25,8 @@ interface AIReviewMessage {
 const aiReviewQueue = createQueue(QUEUE_NAME);
 const issuesQueue = createQueue(ISSUES_QUEUE);
 
+let aiReviewWorker: ReturnType<typeof createWorker>;
+
 function stripMarkdownFences(code: string): string {
     return code
         .replace(/^```[\w]*\n?/gm, '')
@@ -93,7 +95,7 @@ function deduplicateIssues(issues: ReviewIssue[]): ReviewIssue[] {
 }
 
 async function startWorker(): Promise<void> {
-    const worker = createWorker(QUEUE_NAME, async (job) => {
+    aiReviewWorker = createWorker(QUEUE_NAME, async (job) => {
         const reviewMessage = job.data as AIReviewMessage;
         logger.info({ reviewMessage }, 'Received AI review event');
 
@@ -254,6 +256,7 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
+    await aiReviewWorker?.close();
     await aiReviewQueue.close();
     await issuesQueue.close();
     process.exit(0);
@@ -261,6 +264,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
+    await aiReviewWorker?.close();
     await aiReviewQueue.close();
     await issuesQueue.close();
     process.exit(0);

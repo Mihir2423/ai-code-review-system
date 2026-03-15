@@ -27,6 +27,8 @@ const prReviewQueue = createQueue(QUEUE_NAME);
 const commentQueue = createQueue(COMMENT_QUEUE);
 const contextQueue = createQueue(CONTEXT_QUEUE);
 
+let prReviewWorker: ReturnType<typeof createWorker>;
+
 async function getAccessToken(userId: string): Promise<string | null> {
     try {
         const account = await prisma.account.findFirst({
@@ -78,7 +80,7 @@ async function reviewPullRequest(
 }
 
 async function startWorker(): Promise<void> {
-    const worker = createWorker(QUEUE_NAME, async (job) => {
+    prReviewWorker = createWorker(QUEUE_NAME, async (job) => {
         const prDetails = job.data as PRReviewMessage;
         logger.info({ prDetails }, 'Received pr-review event');
 
@@ -219,6 +221,7 @@ main();
 
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
+    await prReviewWorker?.close();
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();
@@ -227,6 +230,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
+    await prReviewWorker?.close();
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();

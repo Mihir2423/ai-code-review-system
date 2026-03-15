@@ -37,12 +37,6 @@ export const addJob = async (queue: Queue, name: string, data: unknown, options?
     return queue.add(name, data, options);
 };
 
-export const addJobToQueue = async (queueName: string, name: string, data: unknown, options?: JobsOptions) => {
-    const queue = createQueue(queueName);
-    const job = await queue.add(name, data, options);
-    return job;
-};
-
 export const closeQueue = async (queue: Queue) => {
     await queue.close();
 };
