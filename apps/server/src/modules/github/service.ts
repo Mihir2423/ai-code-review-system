@@ -1,5 +1,6 @@
 import prisma from '@repo/db';
 import { sendMessage } from '@repo/kafka';
+import { logger } from '@repo/logger';
 import { redis } from '@repo/redis';
 import type { GitHubRepository, GitHubStats } from '@repo/types';
 import { Octokit } from 'octokit';
@@ -76,13 +77,17 @@ export async function connectRepository(userId: string, owner: string, repo: str
         },
     });
 
-    await sendMessage(TOPIC, {
-        repoId: repository.id,
-        owner,
-        repo,
-        url: repository.url,
-        userId,
-    });
+    try {
+        await sendMessage(TOPIC, {
+            repoId: repository.id,
+            owner,
+            repo,
+            url: repository.url,
+            userId,
+        });
+    } catch (error) {
+        logger.error({ error, repoId: repository.id }, 'Failed to send repo indexing message to Kafka');
+    }
 
     return repository;
 }

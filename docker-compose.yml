@@ -16,9 +16,11 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_LOG_DIRS: /var/lib/kafka/logs
+      KAFKA_LOG_DIRS: /var/lib/kafka/data/log
       KAFKA_NUM_PARTITIONS: 1
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
     healthcheck:
       test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
       interval: 10s
@@ -27,6 +29,8 @@ services:
       start_period: 60s
     volumes:
       - kafka_data:/var/lib/kafka/data
+    mem_limit: 2g
+    mem_reservation: 512m
 
   redis:
     image: redis

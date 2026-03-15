@@ -177,9 +177,9 @@ class KafkaManager {
 const kafkaManager = new KafkaManager();
 
 export const kafka = kafkaManager.kafka;
-export const producer = kafkaManager.getProducer();
+export const getProducer = kafkaManager.getProducer.bind(kafkaManager);
+export const getAdmin = kafkaManager.getAdmin.bind(kafkaManager);
 export const consumer = kafkaManager.consumer.bind(kafkaManager);
-export const admin = kafkaManager.getAdmin();
 export const ensureTopics = kafkaManager.ensureTopics.bind(kafkaManager);
 export const sendMessage = kafkaManager.sendMessage.bind(kafkaManager);
 export const sendMessageWithKey = kafkaManager.sendMessageWithKey.bind(kafkaManager);

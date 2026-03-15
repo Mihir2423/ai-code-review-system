@@ -2,7 +2,7 @@ import { logger } from '@repo/logger';
 import cors from 'cors';
 import express from 'express';
 import 'dotenv/config';
-import { kafkaManager } from '@repo/kafka';
+import { ensureTopics, kafkaManager } from '@repo/kafka';
 import { authMiddleware } from './middleware/auth.js';
 import { githubRoutes, reviewRoutes } from './modules/index.js';
 
@@ -27,11 +27,22 @@ app.use('/api/review', authMiddleware, reviewRoutes);
 
 async function start() {
     try {
+        await ensureTopics(['repo.index']);
+        logger.info('[Server] Kafka topics ensured');
+    } catch (error) {
+        logger.error({ error }, 'Failed to ensure Kafka topics, retrying in 5s...');
+        setTimeout(() => {
+            ensureTopics(['repo.index']).catch((err) => {
+                logger.error({ error: err }, 'Failed to ensure Kafka topics on retry');
+            });
+        }, 5000);
+    }
+
+    try {
         await kafkaManager.getProducer();
         logger.info('[Server] Kafka producer connected');
     } catch (error) {
         logger.error({ error }, 'Failed to connect Kafka producer, retrying in 5s...');
-
         setTimeout(() => {
             kafkaManager
                 .getProducer()
