@@ -99,6 +99,7 @@ class KafkaManager {
 
     async ensureTopics(topics: string[]): Promise<void> {
         const admin = await this.getAdmin();
+        const DESIRED_PARTITIONS = 4;
 
         try {
             const existingTopics = await admin.listTopics();
@@ -109,11 +110,24 @@ class KafkaManager {
                 await admin.createTopics({
                     topics: missingTopics.map((topic) => ({
                         topic,
-                        numPartitions: 1,
+                        numPartitions: DESIRED_PARTITIONS,
                         replicationFactor: 1,
                     })),
                 });
                 console.log(`[Kafka] Created topics: ${missingTopics.join(', ')}`);
+            }
+
+            const existingTopicMetadatas = await admin.fetchTopicMetadata();
+            for (const topic of topics) {
+                const topicMetadata = existingTopicMetadatas.topics.find((t) => t.name === topic);
+                if (topicMetadata && topicMetadata.partitions.length < DESIRED_PARTITIONS) {
+                    console.log(`[Kafka] Altering topic ${topic} to have ${DESIRED_PARTITIONS} partitions`);
+                    await (admin as any).alterTopicPartitionCount({
+                        topic: topic,
+                        count: DESIRED_PARTITIONS,
+                    });
+                    console.log(`[Kafka] Altered topic ${topic}`);
+                }
             }
         } catch (error) {
             console.error('[Kafka] Failed to ensure topics:', error);
