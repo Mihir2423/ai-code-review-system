@@ -10,16 +10,28 @@ import {
   Github,
   Terminal
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { ComponentPropsWithoutRef, ReactNode } from 'react';
+import ReactMarkdown, { Components } from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 
+type MarkdownComponentProps = {
+  children?: ReactNode;
+};
+
+type CodeComponentProps = ComponentPropsWithoutRef<'code'> & {
+  node?: unknown;
+  inline?: boolean;
+  className?: string;
+  children?: ReactNode;
+};
+
 const ReviewHistoryPage = () => {
   const { data: reviews, isLoading } = useReviewHistory();
 
-  const MarkdownComponents = {
-    h2: ({ children }: any) => (
+  const MarkdownComponents: Components = {
+    h2: ({ children }: MarkdownComponentProps) => (
       <div className="flex items-center gap-2 mb-4 mt-8 first:mt-0">
         <Terminal size={14} className="text-orange-400" />
         <h2 className="text-[13px] font-bold uppercase tracking-[0.15em] text-neutral-200 font-mono">
@@ -28,18 +40,18 @@ const ReviewHistoryPage = () => {
         <div className="h-px flex-1 bg-neutral-800 ml-2" />
       </div>
     ),
-    h3: ({ children }: any) => (
+    h3: ({ children }: MarkdownComponentProps) => (
       <h3 className="text-sm font-semibold text-neutral-100 mt-6 mb-2 flex items-center gap-2">
         <span className="w-1 h-4 bg-orange-500/50 rounded-full" />
         {children}
       </h3>
     ),
-    p: ({ children }: any) => (
+    p: ({ children }: MarkdownComponentProps) => (
       <p className="text-[14px] leading-relaxed text-neutral-400 mb-4 selection:bg-orange-500/30">
         {children}
       </p>
     ),
-    code({ node, inline, className, children, ...props }: any) {
+    code({ node, inline, className, children, ...restProps }: CodeComponentProps) {
       const match = /language-(\w+)/.exec(className || '');
       return !inline && match ? (
         <div className="my-6 rounded-lg border border-neutral-800 overflow-hidden bg-[#0D0D0D]">
@@ -54,6 +66,7 @@ const ReviewHistoryPage = () => {
             </div>
           </div>
           <SyntaxHighlighter
+            // @ts-expect-error - customStyle type mismatch in library types
             style={vscDarkPlus}
             language={match[1]}
             PreTag="div"
@@ -64,21 +77,21 @@ const ReviewHistoryPage = () => {
               backgroundColor: 'transparent',
               lineHeight: '1.6',
             }}
-            {...props}
+            {...restProps}
           >
             {String(children).replace(/\n$/, '')}
           </SyntaxHighlighter>
         </div>
       ) : (
-        <code className="px-1.5 py-0.5 rounded bg-neutral-800 text-orange-300 text-[13px] font-mono" {...props}>
+        <code className="px-1.5 py-0.5 rounded bg-neutral-800 text-orange-300 text-[13px] font-mono" {...restProps}>
           {children}
         </code>
       );
     },
-    ul: ({ children }: any) => <ul className="space-y-2 mb-6 ml-4">{children}</ul>,
+    ul: ({ children }: MarkdownComponentProps) => <ul className="space-y-2 mb-6 ml-4">{children}</ul>,
 
 
-    li: ({ children }: any) => (
+    li: ({ children }: MarkdownComponentProps) => (
       <li className="flex gap-3 text-sm text-neutral-400">
         <ArrowRight size={14} className="text-orange-500/50 mt-1 shrink-0" />
         <span>{children}</span>
@@ -86,8 +99,8 @@ const ReviewHistoryPage = () => {
     ),
   };
 
-  const formatDate = (dateString: string) => {
-     return new Date(dateString).toLocaleDateString('en-US', {
+  const formatDate = (dateValue: string | Date) => {
+     return new Date(dateValue).toLocaleDateString('en-US', {
        month: 'short',
        day: 'numeric',
        year: 'numeric',
@@ -137,17 +150,17 @@ const ReviewHistoryPage = () => {
                         </div>
                         <span className="flex items-center gap-1.5">
                           <Calendar size={12} />
-                          {formatDate(review.createdAt as unknown as string)}
+                          {formatDate(review.createdAt)}
                         </span>
                     </div>
                   </div>
 
 
                 <div className="bg-[#0A0A0A] border border-neutral-800/60 rounded-xl p-8 shadow-2xl">
-                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={MarkdownComponents as any}
-                   >
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={MarkdownComponents}
+                    >
                     {review.review}
                   </ReactMarkdown>
 
