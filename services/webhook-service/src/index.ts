@@ -44,12 +44,19 @@ app.post('/api/webhooks/github', async (req, res) => {
                 if (repository) {
                     logger.info({ repositoryId: repository.id, fullName }, 'Repository found in database');
 
-                    await addJob(prReviewQueue, 'pr-review', {
-                        owner,
-                        repo: repoName,
-                        prNumber: pr?.number,
-                        userId: repository.userId,
-                    });
+                    await addJob(
+                        prReviewQueue,
+                        'pr-review',
+                        {
+                            owner,
+                            repo: repoName,
+                            prNumber: pr?.number,
+                            userId: repository.userId,
+                        },
+                        {
+                            jobId: `pr-review-${owner}-${repoName}-${pr?.number}-${repository.userId}`,
+                        },
+                    );
 
                     logger.info({ owner, repo: repoName, prNumber: pr?.number }, 'Sent PR review message to queue');
                 } else {

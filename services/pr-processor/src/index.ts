@@ -129,25 +129,35 @@ async function startWorker(): Promise<void> {
                     },
                 });
 
-                await addJob(contextQueue, 'pr-context', {
-                    query,
-                    repoId: repository.id,
+                await addJob(
+                    contextQueue,
+                    'pr-context',
+                    {
+                        query,
+                        repoId: repository.id,
+                        owner,
+                        repo,
+                        prNumber,
+                        userId,
+                        diff: prData.diff,
+                        commitSha: prData.commitSha,
+                    },
+                    {
+                        jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}`,
+                    },
+                );
+                logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to queue');
+            }
+
+            await addJob(
+                commentQueue,
+                'pr-comment',
+                {
                     owner,
                     repo,
                     prNumber,
                     userId,
-                    diff: prData.diff,
-                    commitSha: prData.commitSha,
-                });
-                logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to queue');
-            }
-
-            await addJob(commentQueue, 'pr-comment', {
-                owner,
-                repo,
-                prNumber,
-                userId,
-                comment: `> [!NOTE]
+                    comment: `> [!NOTE]
 > Currently processing new changes in this PR. This may take a few minutes, please wait...
 >
 > \`\`\`ascii
@@ -159,7 +169,11 @@ async function startWorker(): Promise<void> {
 >         (•ㅅ•)
 >         /　 づ
 > \`\`\``,
-            });
+                },
+                {
+                    jobId: `pr-comment-${owner}-${repo}-${prNumber}-${userId}`,
+                },
+            );
 
             logger.info({ owner, repo, prNumber }, 'Sent initial comment message to queue');
         } catch (error) {
