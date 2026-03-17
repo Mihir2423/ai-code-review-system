@@ -75,9 +75,9 @@ model Verification {
 
 model Installation {
   id             String       @id @default(cuid())
-  installationId String       @unique  // GitHub's installation ID
-  accountLogin   String                // GitHub org or username
-  accountType    String                // "User" or "Organization"
+  installationId String       @unique
+  accountLogin   String
+  accountType    String
   suspended      Boolean      @default(false)
 
   userId         String
@@ -104,8 +104,8 @@ model Repository {
   userId         String
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  installationId String                         // ← now a real FK
-  installation   Installation @relation(fields: [installationId], references: [id])
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
 
   reviews        Review[]
 
@@ -125,7 +125,7 @@ model Review {
   prUrl                 String
   review                String
   issues                String[]
-  status                String @default("pending") // completed, failed, pending
+  status                String @default("pending")
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
