@@ -19,6 +19,7 @@ interface AIReviewMessage {
     repo: string;
     prNumber: number;
     userId: string;
+    installationId: string;
     commitSha: string;
 }
 
@@ -99,10 +100,11 @@ async function startWorker(): Promise<void> {
         const reviewMessage = job.data as AIReviewMessage;
         logger.info({ reviewMessage }, 'Received AI review event');
 
-        const { title, description, context, diff, repoId, owner, repo, prNumber, userId, commitSha } = reviewMessage;
+        const { title, description, context, diff, repoId, owner, repo, prNumber, userId, installationId, commitSha } =
+            reviewMessage;
 
-        if (!userId) {
-            logger.error('No userId provided in message');
+        if (!installationId) {
+            logger.error('No installationId provided in message');
             return;
         }
 
@@ -130,7 +132,7 @@ async function startWorker(): Promise<void> {
                 owner,
                 repo,
                 prNumber,
-                userId,
+                installationId, // ✅ was userId
                 commitSha,
                 issues: issuesWithLines,
                 summary: summaryMessage,

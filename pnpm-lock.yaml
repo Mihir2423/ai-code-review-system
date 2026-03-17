@@ -349,6 +349,9 @@ importers:
 
   services/github-comment-service:
     dependencies:
+      '@octokit/auth-app':
+        specifier: ^8.2.0
+        version: 8.2.0
       '@repo/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -386,6 +389,9 @@ importers:
 
   services/pr-processor:
     dependencies:
+      '@octokit/auth-app':
+        specifier: ^8.2.0
+        version: 8.2.0
       '@repo/ai':
         specifier: workspace:*
         version: link:../../packages/ai

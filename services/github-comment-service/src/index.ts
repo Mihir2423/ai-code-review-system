@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import prisma from '@repo/db';
+
+import { createAppAuth } from '@octokit/auth-app';
 import { logger } from '@repo/logger';
 import { createWorker } from '@repo/queue';
 import { Octokit } from 'octokit';
@@ -14,7 +15,7 @@ interface CommentMessage {
     owner: string;
     repo: string;
     prNumber: number;
-    userId: string;
+    installationId: string;
     comment: string;
 }
 
@@ -32,23 +33,21 @@ interface PRIssuesMessage {
     owner: string;
     repo: string;
     prNumber: number;
-    userId: string;
+    installationId: string;
     commitSha: string;
     issues: ReviewIssue[];
     summary?: string;
 }
 
-async function getAccessToken(userId: string): Promise<string | null> {
-    try {
-        const account = await prisma.account.findFirst({
-            where: { userId, providerId: 'github' },
-            select: { accessToken: true },
-        });
-        return account?.accessToken ?? null;
-    } catch (error) {
-        logger.error({ error, userId }, 'Failed to fetch access token from database');
-        return null;
-    }
+async function getBotOctokit(installationId: string): Promise<Octokit> {
+    const auth = createAppAuth({
+        appId: process.env.GITHUB_APP_ID!,
+        privateKey: process.env.GITHUB_BOT_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        installationId,
+    });
+
+    const { token } = await auth({ type: 'installation' });
+    return new Octokit({ auth: token });
 }
 
 async function postComment(
@@ -56,10 +55,8 @@ async function postComment(
     repo: string,
     prNumber: number,
     comment: string,
-    accessToken: string,
+    octokit: Octokit,
 ): Promise<void> {
-    const octokit = new Octokit({ auth: accessToken });
-
     await octokit.rest.issues.createComment({
         owner,
         repo,
@@ -76,10 +73,8 @@ async function postInlineComment(
     prNumber: number,
     commitSha: string,
     issue: ReviewIssue,
-    accessToken: string,
+    octokit: Octokit,
 ): Promise<void> {
-    const octokit = new Octokit({ auth: accessToken });
-
     const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵';
 
     const oldCode = issue.oldCode || 'N/A';
@@ -110,31 +105,33 @@ async function postInlineComment(
 
 async function startIssuesWorker(): Promise<void> {
     issuesWorker = createWorker(ISSUES_QUEUE, async (job) => {
-        const prIssues = job.data as PRIssuesMessage;
-        logger.info({ prIssues }, 'Received pr-issues event');
+        const { owner, repo, prNumber, installationId, commitSha, issues, summary } = job.data as PRIssuesMessage;
 
-        const { owner, repo, prNumber, userId, commitSha, issues, summary } = prIssues;
+        logger.info({ owner, repo, prNumber }, 'Processing pr-issues job');
 
-        if (!userId) {
-            logger.error('No userId provided in message');
+        if (!installationId) {
+            logger.error('No installationId provided in message');
             return;
         }
 
-        const accessToken = await getAccessToken(userId);
-        if (!accessToken) {
-            logger.error({ userId }, 'No GitHub access token found for user');
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
             return;
         }
 
         const failedIssues: { issue: ReviewIssue; error: unknown }[] = [];
         for (const issue of issues) {
             try {
-                await postInlineComment(owner, repo, prNumber, commitSha, issue, accessToken);
+                await postInlineComment(owner, repo, prNumber, commitSha, issue, octokit);
             } catch (error) {
                 logger.error({ error, owner, repo, prNumber, issue }, 'Failed to post inline comment');
                 failedIssues.push({ issue, error });
             }
         }
+
         if (failedIssues.length > 0) {
             logger.error(
                 { owner, repo, prNumber, failedCount: failedIssues.length },
@@ -144,7 +141,7 @@ async function startIssuesWorker(): Promise<void> {
 
         if (summary) {
             try {
-                await postComment(owner, repo, prNumber, summary, accessToken);
+                await postComment(owner, repo, prNumber, summary, octokit);
             } catch (error) {
                 logger.error({ error, owner, repo, prNumber }, 'Failed to post summary comment');
             }
@@ -156,26 +153,27 @@ async function startIssuesWorker(): Promise<void> {
 
 async function startCommentWorker(): Promise<void> {
     commentWorker = createWorker(COMMENT_QUEUE, async (job) => {
-        const commentMsg = job.data as CommentMessage;
-        logger.info({ commentMsg }, 'Received pr-comment event');
+        const { owner, repo, prNumber, installationId, comment } = job.data as CommentMessage;
 
-        const { owner, repo, prNumber, userId, comment } = commentMsg;
+        logger.info({ owner, repo, prNumber }, 'Processing pr-comment job');
 
-        if (!userId) {
-            logger.error('No userId provided in message');
+        if (!installationId) {
+            logger.error('No installationId provided in message');
             return;
         }
 
-        const accessToken = await getAccessToken(userId);
-        if (!accessToken) {
-            logger.error({ userId }, 'No GitHub access token found for user');
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
             return;
         }
 
         try {
-            await postComment(owner, repo, prNumber, comment, accessToken);
+            await postComment(owner, repo, prNumber, comment, octokit);
         } catch (error) {
-            logger.error({ error, owner, repo, prNumber }, 'Failed to post initial comment');
+            logger.error({ error, owner, repo, prNumber }, 'Failed to post comment');
         }
     });
 

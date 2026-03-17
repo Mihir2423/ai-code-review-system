@@ -1,4 +1,7 @@
+// apps/pr-processor/src/index.ts
+
 import 'dotenv/config';
+import { createAppAuth } from '@octokit/auth-app';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
 import { addJob, createQueue, createWorker } from '@repo/queue';
@@ -13,6 +16,7 @@ interface PRReviewMessage {
     repo: string;
     prNumber: number;
     userId: string;
+    installationId: string; // ✅ added
 }
 
 interface PRDetails {
@@ -29,27 +33,24 @@ const contextQueue = createQueue(CONTEXT_QUEUE);
 
 let prReviewWorker: ReturnType<typeof createWorker>;
 
-async function getAccessToken(userId: string): Promise<string | null> {
-    try {
-        const account = await prisma.account.findFirst({
-            where: { userId, providerId: 'github' },
-            select: { accessToken: true },
-        });
-        return account?.accessToken ?? null;
-    } catch (error) {
-        logger.error({ error, userId }, 'Failed to fetch access token from database');
-        return null;
-    }
+// ✅ Replaces getAccessToken — authenticates as the bot
+async function getBotOctokit(installationId: string): Promise<Octokit> {
+    const auth = createAppAuth({
+        appId: process.env.GITHUB_APP_ID!,
+        privateKey: process.env.GITHUB_BOT_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        installationId,
+    });
+
+    const { token } = await auth({ type: 'installation' });
+    return new Octokit({ auth: token });
 }
 
 async function reviewPullRequest(
     owner: string,
     repo: string,
     prNumber: number,
-    accessToken: string,
+    octokit: Octokit, // ✅ accepts octokit instead of accessToken
 ): Promise<PRDetails> {
-    const octokit = new Octokit({ auth: accessToken });
-
     const { data: pr } = await octokit.rest.pulls.get({
         owner,
         repo,
@@ -62,13 +63,10 @@ async function reviewPullRequest(
         owner,
         repo,
         pull_number: prNumber,
-        mediaType: {
-            format: 'diff',
-        },
+        mediaType: { format: 'diff' },
     });
 
     logger.info({ prNumber }, 'Pull request diff retrieved');
-    logger.info({ diff }, 'Pull request diff content');
 
     return {
         prTitle: pr.title,
@@ -81,27 +79,34 @@ async function reviewPullRequest(
 
 async function startWorker(): Promise<void> {
     prReviewWorker = createWorker(QUEUE_NAME, async (job) => {
-        const prDetails = job.data as PRReviewMessage;
-        logger.info({ prDetails }, 'Received pr-review event');
+        const { owner, repo, prNumber, userId, installationId } = job.data as PRReviewMessage;
 
-        const { owner, repo, prNumber, userId } = prDetails;
+        logger.info({ owner, repo, prNumber }, 'Received pr-review event');
 
-        if (!userId) {
-            logger.error('No userId provided in message');
+        if (!installationId) {
+            logger.error('No installationId provided in message');
             return;
         }
 
-        const accessToken = await getAccessToken(userId);
-        if (!accessToken) {
-            logger.error({ userId }, 'No GitHub access token found for user');
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error(
+                {
+                    installationId,
+                    message: (error as Error).message,
+                    stack: (error as Error).stack,
+                },
+                'Failed to get bot octokit',
+            );
             return;
         }
 
         try {
-            const prData = await reviewPullRequest(owner, repo, prNumber, accessToken);
+            const prData = await reviewPullRequest(owner, repo, prNumber, octokit);
 
             const query = `${prData.prTitle}\n${prData.prBody}`;
-            logger.info({ query }, 'Generated query for context retrieval');
 
             const repository = await prisma.repository.findFirst({
                 where: { owner, name: repo, userId },
@@ -139,6 +144,7 @@ async function startWorker(): Promise<void> {
                         repo,
                         prNumber,
                         userId,
+                        installationId, // ✅ forward installationId
                         diff: prData.diff,
                         commitSha: prData.commitSha,
                     },
@@ -146,9 +152,11 @@ async function startWorker(): Promise<void> {
                         jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}`,
                     },
                 );
+
                 logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to queue');
             }
 
+            // ✅ post initial "processing" comment as bot
             await addJob(
                 commentQueue,
                 'pr-comment',
@@ -156,7 +164,7 @@ async function startWorker(): Promise<void> {
                     owner,
                     repo,
                     prNumber,
-                    userId,
+                    installationId, // ✅ was userId
                     comment: `> [!NOTE]
 > Currently processing new changes in this PR. This may take a few minutes, please wait...
 >
@@ -171,7 +179,7 @@ async function startWorker(): Promise<void> {
 > \`\`\``,
                 },
                 {
-                    jobId: `pr-comment-${owner}-${repo}-${prNumber}-${userId}`,
+                    jobId: `pr-comment-${owner}-${repo}-${prNumber}-${installationId}`,
                 },
             );
 
@@ -203,12 +211,11 @@ async function startWorker(): Promise<void> {
                         status: 'failed',
                     },
                 });
-                logger.info({ repositoryId: repository.id, prNumber }, 'Created failed review record');
             }
         }
     });
 
-    logger.info({ queue: QUEUE_NAME }, 'Queue worker started');
+    logger.info({ queue: QUEUE_NAME }, 'PR review worker started');
 }
 
 async function main(): Promise<void> {

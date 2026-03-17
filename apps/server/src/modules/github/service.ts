@@ -55,26 +55,46 @@ export async function createWebhook(userId: string, owner: string, repo: string)
     return webhook.data;
 }
 
+async function fetchRepoMetadata(accessToken: string, owner: string, repo: string) {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/vnd.github+json',
+        },
+    });
+    if (!res.ok) throw new Error('Failed to fetch repo metadata');
+    return res.json();
+}
+
 export async function connectRepository(userId: string, owner: string, repo: string) {
     const account = await prisma.account.findFirst({
         where: { userId, providerId: 'github' },
         select: { accessToken: true },
     });
-
     if (!account?.accessToken) {
         throw new Error('GitHub account not connected');
     }
 
-    const webhook = await createWebhook(userId, owner, repo);
+    const installation = await prisma.installation.findFirst({
+        where: { userId },
+    });
+    if (!installation) {
+        throw new Error('GitHub App not installed. Please install the bot first.');
+    }
+
+    const repoData = await fetchRepoMetadata(account.accessToken, owner, repo);
 
     const repository = await prisma.repository.create({
         data: {
-            githubId: String(webhook.id),
+            githubId: String(repoData.id),
             name: repo,
             owner,
             fullName: `${owner}/${repo}`,
-            url: `https://github.com/${owner}/${repo}/`,
+            url: `https://github.com/${owner}/${repo}`,
+            defaultBranch: repoData.default_branch,
+            isPrivate: repoData.private,
             userId,
+            installationId: installation.id,
         },
     });
 
@@ -84,6 +104,7 @@ export async function connectRepository(userId: string, owner: string, repo: str
         repo,
         url: repository.url,
         userId,
+        installationId: installation.installationId,
     });
 
     return repository;

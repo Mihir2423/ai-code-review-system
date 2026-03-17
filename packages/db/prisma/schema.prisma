@@ -18,6 +18,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   repositories  Repository[]
+  installations Installation[]
 
   @@unique([email])
   @@map("user")
@@ -72,20 +73,47 @@ model Verification {
 }
 
 
-model Repository {
-  id                    String @id @default(cuid())
-  githubId              String @unique
-  name                  String
-  owner                 String
-  fullName              String
-  url                   String
-  userId                String
-  reviews               Review[]
-  user                  User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+model Installation {
+  id             String       @id @default(cuid())
+  installationId String       @unique
+  accountLogin   String
+  accountType    String
+  suspended      Boolean      @default(false)
+
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories   Repository[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([userId])
+  @@map("installation")
+}
+
+model Repository {
+  id             String       @id @default(cuid())
+  githubId       String       @unique
+  name           String
+  owner          String
+  fullName       String
+  url            String
+  defaultBranch  String       @default("main")
+  isPrivate      Boolean      @default(false)
+
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  reviews        Review[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([installationId])
   @@map("repository")
 }
 
@@ -97,7 +125,7 @@ model Review {
   prUrl                 String
   review                String
   issues                String[]
-  status                String @default("pending") // completed, failed, pending
+  status                String @default("pending")
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
