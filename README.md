@@ -2,6 +2,77 @@
 
 A monorepo for automated code review using AI.
 
+## Data Flows
+
+### 1. When a User Installs the Bot to a Repository
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant GitHub
+    participant Web as apps/web
+    participant WS as services/webhook-service
+    participant DB as packages/db
+    participant RI as services/repo-indexer
+
+    User->>Web: User initiates GitHub App installation
+    Web->>GitHub: Redirect to GitHub OAuth
+    GitHub->>Web: OAuth callback with installation token
+    Note over Web,GitHub: User selects repositories to install
+
+    GitHub->>WS: Webhook: installation created
+    WS->>DB: Create installation record
+    DB-->>WS: Installation created
+
+    loop For each repository
+        WS->>DB: Upsert repository
+    end
+
+    WS->>RI: Add job to repo-index queue
+    RI->>GitHub: Fetch repository files
+    RI->>RI: Generate embeddings
+    RI->>RI: Store in vector database
+```
+
+### 2. When a User Raises a Pull Request
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant GitHub
+    participant WS as services/webhook-service
+    participant DB as packages/db
+    participant PP as services/pr-processor
+    participant RI as services/repo-indexer
+    participant AIR as services/ai-review-worker
+    participant GCS as services/github-comment-service
+
+    User->>GitHub: Creates/opens PR
+    GitHub->>WS: Webhook: pull_request opened
+
+    WS->>DB: Find repository
+    DB-->>WS: Repository found
+    WS->>PP: Add job to pr-review queue
+
+    PP->>GitHub: Get PR details & diff
+    PP->>DB: Create review record (status: pending)
+    PP->>RI: Add job to pr-context queue
+    PP->>GCS: Add job to pr-comment (initial comment)
+
+    GCS->>GitHub: Post "processing" comment
+
+    RI->>RI: Fetch similar code from vector store
+    RI->>AIR: Add job to pr-ai-review queue
+
+    AIR->>AIR: Generate AI code review
+    AIR->>DB: Update review record (status: completed)
+    AIR->>GCS: Add job to pr-issues queue
+    AIR->>GCS: Add job to pr-comment (summary)
+
+    GCS->>GitHub: Post inline comments for each issue
+    GCS->>GitHub: Post summary comment
+```
+
 ## What's inside?
 
 ### Apps and Packages
@@ -51,63 +122,4 @@ You can develop a specific package by using a filter:
 ```sh
 pnpm dev --filter=web
 pnpm dev --filter=ai-review-worker
-```
-
-```mermaid
-flowchart TD
-
-    %% Frontend & Backend
-    A[User] --> B[apps/web Next.js]
-    A --> C[apps/server API]
-
-    %% Repo connection
-    B --> D[Connect GitHub Repo]
-    C --> D
-
-    D --> E[Store Repo Info]
-    E --> DB[(Postgres)]
-
-    D --> F[Attach GitHub Webhook]
-
-    %% Repo indexing
-    D --> G[services/repo-indexer]
-
-    G --> H[Clone Repository]
-    H --> I[Chunk Code]
-    I --> J[Generate Embeddings]
-    J --> K[(Pinecone Vector DB)]
-
-    %% PR event
-    L[User Creates PR] --> M[GitHub Webhook]
-
-    M --> N[services/webhook-service]
-
-    N --> O[Kafka: pr-events]
-
-    %% PR processing
-    O --> P[services/pr-processor]
-
-    P --> Q[Fetch PR Diff from GitHub]
-
-    Q --> R[Kafka: review-jobs]
-
-    %% AI review worker
-    R --> S[services/ai-review-worker]
-
-    S --> T[Check Redis Cache]
-
-    T -->|Cache Hit| U[Return Cached Review]
-
-    T -->|Cache Miss| V[Retrieve Context from Pinecone]
-
-    V --> W[Gemini AI Review]
-
-    W --> X[Store Review in Redis]
-
-    X --> Y[Kafka: review-results]
-
-    %% Comment service
-    Y --> Z[services/github-comment-service]
-
-    Z --> AA[Post Comment on PR]
 ```
