@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import { createAppAuth } from '@octokit/auth-app';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
 import { addJob, createQueue } from '@repo/queue';
 import crypto from 'crypto';
 import express from 'express';
+import { Octokit } from 'octokit';
 
 const QUEUE_NAME = 'pr-review';
 const REPO_INDEX_QUEUE_NAME = 'repo-index';
@@ -22,6 +24,17 @@ function verifySignature(req: express.Request): boolean {
     const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET);
     const digest = 'sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex');
     return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+}
+
+async function getBotOctokit(installationId: string): Promise<Octokit> {
+    const auth = createAppAuth({
+        appId: process.env.GITHUB_APP_ID!,
+        privateKey: process.env.GITHUB_BOT_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        installationId,
+    });
+
+    const { token } = await auth({ type: 'installation' });
+    return new Octokit({ auth: token });
 }
 
 async function upsertRepositories(repos: any[], installationRecordId: string, userId: string) {
@@ -197,6 +210,15 @@ app.post('/api/webhooks/github', async (req, res) => {
                 });
 
                 if (repository) {
+                    const octokit = await getBotOctokit(repository.installation.installationId);
+                    await octokit.rest.pulls.requestReviewers({
+                        owner,
+                        repo: repoName,
+                        pull_number: pr?.number,
+                        reviewers: ['openreview-bot[bot]'],
+                    });
+                    logger.info({ owner, repo: repoName, prNumber: pr?.number }, 'Bot added as reviewer');
+
                     await addJob(
                         prReviewQueue,
                         'pr-review',
