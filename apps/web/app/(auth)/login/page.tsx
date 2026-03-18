@@ -15,7 +15,7 @@ const SignInPage = () => {
     const date = new Date();
     const currentYear = date.getFullYear();
     return (
-        <div className={`h-dvh flex flex-col bg-[#000000] ${redhat.className}`}>
+        <div className={`h-dvh flex flex-col bg-[#121212] ${redhat.className}`}>
             <div className="h-16 w-full border-b border-neutral-500/20 flex justify-center">
                 <div className="w-5xl border-x border-neutral-500/20"></div>
             </div>
@@ -24,7 +24,7 @@ const SignInPage = () => {
                     <div className="flex flex-col gap-10">
                         <Link
                             href={'/'}
-                            className="flex items-center gap-1 pr-2 transition-colors ease-in-out duration-150 pr-3 py-2 text-neutral-500 hover:text-white w-fit text-sm font-medium"
+                            className="flex items-center gap-1 transition-colors ease-in-out duration-150 pr-3 py-2 text-neutral-500 hover:text-white w-fit text-sm font-medium"
                         >
                             <ChevronLeft size={16} className="" />
                             Back
@@ -42,7 +42,7 @@ const SignInPage = () => {
                             </p>
                         </header>
                         <div className="flex items-center gap-4 w-fit">
-                            <div className="flex items-center bg-[#151515] border border-orange-500/30 rounded-full px-3 py-1">
+                            <div className="flex items-center bg-orange-500/30 rounded px-2 border border-orange-500 py-1">
                                 <div className="relative flex h-2 w-2 mr-2">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
@@ -57,9 +57,7 @@ const SignInPage = () => {
                         </div>
                         <div className="flex flex-col gap-5">
                             <h2 className="text-white text-4xl font-bold leading-[1.1]">
-                                Your{' '}
-                                <span className="font-bold text-black rounded px-2 text-3xl bg-orange-500">Code</span>{' '}
-                                Is Ready.
+                                Your Code Is Ready.
                                 <br /> Ship Better Code, Faster.
                             </h2>
                             <p className="text-zinc-400 text-sm">
@@ -69,7 +67,7 @@ const SignInPage = () => {
                         </div>
                         <button
                             onClick={() => signIn.social({ provider: 'github' })}
-                            className="flex items-center gap-3 px-3 py-3.5 border border-zinc-800 rounded-md hover:bg-zinc-900 text-white w-fit transition-colors text-sm font-medium"
+                            className="flex border border-black shadow-[inset_0_0.1rem_0.1rem_rgba(255,255,255,0.4),inset_0_0_0_0.1rem_rgba(255,255,255,0.3),0_0.1rem_0.1rem_rgba(0,0,0,0.08),0_0.2rem_0.4rem_rgba(0,0,0,0.04)] bg-linear-to-b from-white/10 to-transparent items-center gap-3 px-3 py-2 bg-orange-500 rounded-md hover:bg-orange-400 text-black w-fit transition-colors ease-in-out duration-150 text-sm font-bold"
                         >
                             <svg
                                 width="20"
