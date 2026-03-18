@@ -36,7 +36,6 @@ export interface RepoDetails {
     repo: string;
 }
 
-
 export async function generateCodeReview(
     title: string,
     description: string,
@@ -65,6 +64,7 @@ Analyze the changes and return a JSON object with the following structure:
   "issues": [
     {
       "file": "filename.ts",
+      "line": 42,
       "severity": "critical|warning|suggestion",
       "description": "What's wrong - be specific and concise",
       "oldCode": "exact code that was removed (plain code, no markdown fences)",
@@ -91,15 +91,15 @@ Return ONLY valid JSON, no markdown formatting.`;
     });
 
     try {
-      let cleanedText = text.trim();
+        let cleanedText = text.trim();
 
-       const startIdx = cleanedText.indexOf('{');
-       const endIdx = cleanedText.lastIndexOf('}');
-       if (startIdx === -1 || endIdx === -1) {
-           throw new Error('No JSON object found in response');
-       }
-       cleanedText = cleanedText.slice(startIdx, endIdx + 1);
-       const result = JSON.parse(jsonrepair(cleanedText)) as ReviewResult;
+        const startIdx = cleanedText.indexOf('{');
+        const endIdx = cleanedText.lastIndexOf('}');
+        if (startIdx === -1 || endIdx === -1) {
+            throw new Error('No JSON object found in response');
+        }
+        cleanedText = cleanedText.slice(startIdx, endIdx + 1);
+        const result = JSON.parse(jsonrepair(cleanedText)) as ReviewResult;
 
         if (!Array.isArray(result.issues)) result.issues = [];
         if (!Array.isArray(result.suggestions)) result.suggestions = [];

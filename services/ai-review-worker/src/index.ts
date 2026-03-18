@@ -37,8 +37,12 @@ function stripMarkdownFences(code: string): string {
 
 function findLineNumberInDiff(diff: string, file: string, code: string): number | null {
     const cleanCode = stripMarkdownFences(code);
-    const searchCode = cleanCode.substring(0, 30).trim();
-    logger.debug({ file, searchCode }, 'Searching for line number in diff');
+    const searchVariants = [
+        cleanCode.substring(0, 30).trim(),
+        cleanCode.substring(0, 20).trim(),
+        cleanCode.substring(0, 15).trim(),
+    ];
+    logger.debug({ file, searchVariants }, 'Searching for line number in diff');
 
     const lines = diff.split('\n');
     let currentFile = '';
@@ -47,15 +51,23 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
     for (const line of lines) {
         if (line.startsWith('diff --git')) {
             const match = line.match(/b\/(.+)/);
-            if (match && match[1]) currentFile = match[1];
+            if (match && match[1]) {
+                currentFile = match[1];
+                logger.debug({ diffLine: line, extractedFile: currentFile }, 'Extracted file from diff');
+            }
         } else if (line.startsWith('@@')) {
             const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
             if (match && match[1]) hunkStartLine = parseInt(match[1], 10);
             logger.debug({ hunkStartLine, currentFile }, 'Found hunk header');
         } else if (currentFile === file) {
-            if (line.includes(searchCode)) {
-                logger.debug({ foundLine: hunkStartLine, matchedLine: line }, 'Found matching line');
-                return hunkStartLine;
+            for (const variant of searchVariants) {
+                if (variant && line.includes(variant)) {
+                    logger.debug(
+                        { foundLine: hunkStartLine, matchedLine: line.substring(0, 50) },
+                        'Found matching line',
+                    );
+                    return hunkStartLine;
+                }
             }
             if (line.startsWith('+') || line.startsWith(' ')) {
                 hunkStartLine++;
@@ -63,7 +75,7 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
         }
     }
 
-    logger.warn({ file, searchCode }, 'Could not find line number in diff');
+    logger.warn({ file, searchVariants }, 'Could not find line number in diff');
     return null;
 }
 
@@ -124,12 +136,19 @@ async function startWorker(): Promise<void> {
 
             const issuesWithLines = uniqueIssues
                 .map((issue) => {
-                    const line = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
+                    const diffLine = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
+                    const line = diffLine !== null ? diffLine : issue.line;
                     logger.info(
-                        { file: issue.file, line, codeSnippet: (issue.newCode || issue.oldCode).substring(0, 50) },
+                        {
+                            file: issue.file,
+                            line,
+                            diffLine,
+                            aiLine: issue.line,
+                            codeSnippet: (issue.newCode || issue.oldCode).substring(0, 50),
+                        },
                         'Resolved issue line number',
                     );
-                    return line !== null ? { ...issue, line } : null;
+                    return line ? { ...issue, line } : null;
                 })
                 .filter((issue): issue is NonNullable<typeof issue> => issue !== null);
 
