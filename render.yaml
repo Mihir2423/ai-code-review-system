@@ -1,28 +1,6 @@
 services:
   - name: server
+    type: web
     rootDir: apps/server
     buildCommand: cd ../.. && pnpm install && pnpm --filter server build
     startCommand: node dist/index.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: BETTER_AUTH_SECRET
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: DIRECT_URL
-        sync: false
-      - key: GITHUB_CLIENT_ID
-        sync: false
-      - key: GITHUB_CLIENT_SECRET
-        sync: false
-      - key: GITHUB_BOT_CLIENT_ID
-        sync: false
-      - key: GITHUB_BOT_CLIENT_SECRET
-        sync: false
-      - key: GITHUB_BOT_PRIVATE_KEY
-        sync: false
-      - key: PUBLIC_URL
-        sync: false
-      - key: GITHUB_APP_ID
-        sync: false
