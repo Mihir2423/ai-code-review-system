@@ -23,6 +23,7 @@
     "devDependencies": {
         "@types/node": "^20.19.37",
         "@types/pg": "^8.11.0",
+        "dotenv": "^16.4.0",
         "prisma": "^7.4.2"
     }
 }
