@@ -16,6 +16,7 @@
         "pino": "^10.3.1"
     },
     "devDependencies": {
+        "@types/node": "^20.19.37",
         "pino-pretty": "^13.1.3"
     }
 }

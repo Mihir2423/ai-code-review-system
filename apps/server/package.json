@@ -5,7 +5,7 @@
     "main": "index.js",
     "type": "module",
     "scripts": {
-        "build": "turbo run build",
+        "build": "tsc",
         "start": "node dist/index.js",
         "dev": "tsx watch src/index.ts"
     },

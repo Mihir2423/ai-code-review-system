@@ -34,4 +34,11 @@ generated
 
 skills-lock.json
 
+# build output
+dist
+
 .agents
+*.d.ts
+*.js
+*.d.ts.map
+*.js.map

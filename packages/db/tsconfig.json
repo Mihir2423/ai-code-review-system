@@ -1,14 +1,15 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "outDir": "./dist",
-    "types": ["node"]
-  },
-  "include": ["src/**/*", "prisma.config.ts"]
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "declaration": true,
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "types": ["node"]
+    },
+    "include": ["src/**/*"]
 }
