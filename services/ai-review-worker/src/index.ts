@@ -35,6 +35,17 @@ function stripMarkdownFences(code: string): string {
         .trim();
 }
 
+function extractFilesFromDiff(diff: string): Set<string> {
+    const files = new Set<string>();
+    for (const line of diff.split('\n')) {
+        if (line.startsWith('diff --git')) {
+            const match = line.match(/b\/(.+)/);
+            if (match?.[1]) files.add(match[1]);
+        }
+    }
+    return files;
+}
+
 function findLineNumberInDiff(diff: string, file: string, code: string): number | null {
     const cleanCode = stripMarkdownFences(code);
     const searchVariants = [
@@ -134,7 +145,16 @@ async function startWorker(): Promise<void> {
 
             const uniqueIssues = deduplicateIssues(review.issues);
 
+            const diffFiles = extractFilesFromDiff(diff);
+
             const issuesWithLines = uniqueIssues
+                .filter((issue) => {
+                    if (!diffFiles.has(issue.file)) {
+                        logger.warn({ file: issue.file }, 'Skipping issue: file not found in diff');
+                        return false;
+                    }
+                    return true;
+                })
                 .map((issue) => {
                     const diffLine = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
                     const line = diffLine !== null ? diffLine : issue.line;
@@ -148,7 +168,7 @@ async function startWorker(): Promise<void> {
                         },
                         'Resolved issue line number',
                     );
-                    return line ? { ...issue, line } : null;
+                    return line !== null && line > 0 ? { ...issue, line } : null;
                 })
                 .filter((issue): issue is NonNullable<typeof issue> => issue !== null);
 
