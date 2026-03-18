@@ -40,7 +40,7 @@ export async function getUserReviewHistory(userId: string): Promise<ReviewHistor
         },
     });
 
-    return reviews.map((review) => ({
+    return reviews.map((review: (typeof reviews)[number]) => ({
         ...review,
         repository: review.user,
     }));
