@@ -194,7 +194,7 @@ async function startWorker(): Promise<void> {
                     : '';
             const summaryMessage =
                 `## Code Review Summary\n\n${review.summary}\n\n### Strengths\n${review.strengths}\n\n` +
-                `### Issues Found: ${uniqueIssues.length} (${issuesWithLines.length} inline, ${outOfDiffIssues.length} in related files)` +
+                `### Issues Found: ${uniqueIssues.length}` +
                 outOfDiffSection;
             await addJob(issuesQueue, 'pr-issues', {
                 owner,
