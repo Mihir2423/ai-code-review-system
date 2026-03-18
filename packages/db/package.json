@@ -5,7 +5,7 @@
     "main": "src/index.ts",
     "type": "module",
     "scripts": {
-        "build": "prisma generate && tsc",
+        "build": "prisma generate",
         "db:generate": "prisma generate",
         "db:push": "prisma db push",
         "db:migrate": "prisma migrate dev"
@@ -23,6 +23,7 @@
     "devDependencies": {
         "@types/node": "^20.19.37",
         "@types/pg": "^8.11.0",
-        "prisma": "^7.4.2"
+        "prisma": "^7.4.2",
+        "typescript": "^5.9.3"
     }
 }

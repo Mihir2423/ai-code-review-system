@@ -1,7 +1,0 @@
-services:
-  - name: server
-    type: web
-    runtime: node
-    rootDir: apps/server
-    buildCommand: npm install -g pnpm@10.17.1 && cd ../.. && pnpm install && pnpm --filter server... build
-    startCommand: node dist/index.js

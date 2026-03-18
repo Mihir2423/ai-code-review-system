@@ -7,8 +7,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": true,
+    "rootDir": "./src",
     "outDir": "./dist",
     "types": ["node"]
   },
-  "include": ["src/**/*", "prisma.config.ts"]
+  "include": ["src/**/*"]
 }

@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "build": "turbo run build",
-        "start": "node dist/index.js",
+        "start": "tsx src/index.ts",
         "dev": "tsx watch src/index.ts"
     },
     "keywords": [],
@@ -25,14 +25,14 @@
         "express": "^5.2.1",
         "http-status-codes": "^2.3.0",
         "jose": "^6.0.11",
-        "octokit": "^5.0.5"
+        "octokit": "^5.0.5",
+        "tsx": "^4.21.0"
     },
     "devDependencies": {
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.6",
         "@types/express-serve-static-core": "^5.1.1",
         "@types/node": "^20.19.37",
-        "tsx": "^4.21.0",
         "typescript": "^5.9.3"
     }
 }
