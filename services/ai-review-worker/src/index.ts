@@ -49,10 +49,13 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
         } else if (line.startsWith('@@')) {
             const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
             if (match && match[1]) hunkStartLine = parseInt(match[1], 10);
-        } else if (currentFile === file && line.includes(searchCode)) {
-            return hunkStartLine;
-        } else if (currentFile === file && (line.startsWith('+') || line.startsWith(' '))) {
-            hunkStartLine++;
+        } else if (currentFile === file) {
+            if (line.includes(searchCode)) {
+                return hunkStartLine;
+            }
+            if (line.startsWith('+') || line.startsWith(' ')) {
+                hunkStartLine++;
+            }
         }
     }
 
