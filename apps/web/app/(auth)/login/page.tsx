@@ -14,6 +14,7 @@ const redhat = Red_Hat_Display({
 const SignInPage = () => {
     const date = new Date();
     const currentYear = date.getFullYear();
+    console.log('HELLo');
     return (
         <div className={`h-dvh flex flex-col bg-[#121212] ${redhat.className}`}>
             <div className="h-16 w-full border-b border-neutral-500/20 flex justify-center">
