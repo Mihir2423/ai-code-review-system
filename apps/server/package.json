@@ -5,7 +5,7 @@
     "main": "index.js",
     "type": "module",
     "scripts": {
-        "build": "pnpm --filter @repo/db --filter @repo/logger --filter @repo/queue --filter @repo/redis --filter @repo/types db:generate && tsc",
+        "build": "turbo run build",
         "start": "node dist/index.js",
         "dev": "tsx watch src/index.ts"
     },
