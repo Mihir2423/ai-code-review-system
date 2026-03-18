@@ -36,7 +36,7 @@ const SignInPage = () => {
                                 eview
                             </h1>
                             <p className="text-zinc-400 text-sm md:text-base">
-                                High-quality video calls for creators and storytellers
+                                Real-time AI reviews for your pull requests
                             </p>
                         </header>
                         <div className="flex items-center gap-4 w-fit">
@@ -61,12 +61,12 @@ const SignInPage = () => {
                         </div>
                         <div className="flex flex-col gap-5">
                             <h2 className="text-white text-4xl font-bold leading-[1.1]">
-                                Your Studio Is Ready.
-                                <br /> Let Every Call Tell a Story.
+                                Your Code Is Ready.
+                                <br /> Ship Better Code, Faster.
                             </h2>
                             <p className="text-zinc-400 text-sm">
-                                Log in to start your next great recording session, capture what matters, save stories,
-                                and turn real talk into stunning content.
+                                Sign in to automate code reviews, catch bugs early, and ship with confidence. Get
+                                started now.
                             </p>
                         </div>
                         <button
