@@ -87,6 +87,11 @@ async function postInlineComment(
               ? `Removed: \`${oldCode}\``
               : `Added: \`${newCode}\``;
 
+    if (!issue.line || issue.line <= 0) {
+        logger.warn({ owner, repo, prNumber, issue }, 'Skipping inline comment: invalid line number');
+        return;
+    }
+
     const body = `${emoji} **${issue.severity.toUpperCase()}** at ${issue.file}:${issue.line}\n\n${issue.description}\n\n**Change:** ${changeDisplay}\n\n**Suggestion:** ${issue.suggestion}`;
 
     await octokit.rest.pulls.createReviewComment({

@@ -35,9 +35,26 @@ function stripMarkdownFences(code: string): string {
         .trim();
 }
 
+function extractFilesFromDiff(diff: string): Set<string> {
+    const files = new Set<string>();
+    for (const line of diff.split('\n')) {
+        if (line.startsWith('diff --git')) {
+            const match = line.match(/b\/(.+)/);
+            if (match?.[1]) files.add(match[1]);
+        }
+    }
+    return files;
+}
+
 function findLineNumberInDiff(diff: string, file: string, code: string): number | null {
     const cleanCode = stripMarkdownFences(code);
-    const searchCode = cleanCode.substring(0, 30).trim();
+    const searchVariants = [
+        cleanCode.substring(0, 30).trim(),
+        cleanCode.substring(0, 20).trim(),
+        cleanCode.substring(0, 15).trim(),
+    ];
+    logger.debug({ file, searchVariants }, 'Searching for line number in diff');
+
     const lines = diff.split('\n');
     let currentFile = '';
     let hunkStartLine = 0;
@@ -45,17 +62,31 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
     for (const line of lines) {
         if (line.startsWith('diff --git')) {
             const match = line.match(/b\/(.+)/);
-            if (match && match[1]) currentFile = match[1];
+            if (match && match[1]) {
+                currentFile = match[1];
+                logger.debug({ diffLine: line, extractedFile: currentFile }, 'Extracted file from diff');
+            }
         } else if (line.startsWith('@@')) {
             const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
             if (match && match[1]) hunkStartLine = parseInt(match[1], 10);
-        } else if (currentFile === file && line.includes(searchCode)) {
-            return hunkStartLine;
-        } else if (currentFile === file && (line.startsWith('+') || line.startsWith(' '))) {
-            hunkStartLine++;
+            logger.debug({ hunkStartLine, currentFile }, 'Found hunk header');
+        } else if (currentFile === file) {
+            for (const variant of searchVariants) {
+                if (variant && line.includes(variant)) {
+                    logger.debug(
+                        { foundLine: hunkStartLine, matchedLine: line.substring(0, 50) },
+                        'Found matching line',
+                    );
+                    return hunkStartLine;
+                }
+            }
+            if (line.startsWith('+') || line.startsWith(' ')) {
+                hunkStartLine++;
+            }
         }
     }
 
+    logger.warn({ file, searchVariants }, 'Could not find line number in diff');
     return null;
 }
 
@@ -114,10 +145,35 @@ async function startWorker(): Promise<void> {
 
             const uniqueIssues = deduplicateIssues(review.issues);
 
-            const issuesWithLines = uniqueIssues
+            const diffFiles = extractFilesFromDiff(diff);
+
+            const inDiffIssues = uniqueIssues.filter((issue) => diffFiles.has(issue.file));
+            const outOfDiffIssues = uniqueIssues.filter((issue) => {
+                if (!diffFiles.has(issue.file)) {
+                    logger.info(
+                        { file: issue.file },
+                        'Issue refers to a file not in the diff — will include in summary instead of inline comment',
+                    );
+                    return true;
+                }
+                return false;
+            });
+
+            const issuesWithLines = inDiffIssues
                 .map((issue) => {
-                    const line = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
-                    return line !== null ? { ...issue, line } : null;
+                    const diffLine = findLineNumberInDiff(diff, issue.file, issue.newCode || issue.oldCode);
+                    const line = diffLine !== null ? diffLine : issue.line;
+                    logger.info(
+                        {
+                            file: issue.file,
+                            line,
+                            diffLine,
+                            aiLine: issue.line,
+                            codeSnippet: (issue.newCode || issue.oldCode).substring(0, 50),
+                        },
+                        'Resolved issue line number',
+                    );
+                    return line !== null && line > 0 ? { ...issue, line } : null;
                 })
                 .filter((issue): issue is NonNullable<typeof issue> => issue !== null);
 
@@ -126,13 +182,25 @@ async function startWorker(): Promise<void> {
                 'Deduplicated and resolved line numbers for issues',
             );
 
-            const summaryMessage = `## Code Review Summary\n\n${review.summary}\n\n### Strengths\n${review.strengths}\n\n### Issues Found: ${uniqueIssues.length}`;
-
+            const outOfDiffSection =
+                outOfDiffIssues.length > 0
+                    ? `\n\n### Related Issues (files not directly changed)\n${outOfDiffIssues
+                          .map((issue) => {
+                              const emoji =
+                                  issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵';
+                              return `- ${emoji} **${issue.severity.toUpperCase()}** \`${issue.file}\`: ${issue.description}\n  > **Suggestion:** ${issue.suggestion}`;
+                          })
+                          .join('\n')}`
+                    : '';
+            const summaryMessage =
+                `## Code Review Summary\n\n${review.summary}\n\n### Strengths\n${review.strengths}\n\n` +
+                `### Issues Found: ${uniqueIssues.length}` +
+                outOfDiffSection;
             await addJob(issuesQueue, 'pr-issues', {
                 owner,
                 repo,
                 prNumber,
-                installationId, // ✅ was userId
+                installationId,
                 commitSha,
                 issues: issuesWithLines,
                 summary: summaryMessage,
