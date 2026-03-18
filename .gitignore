@@ -35,3 +35,8 @@ generated
 skills-lock.json
 
 .agents
+/packages/db/dist
+
+/packages/logger/dist
+/packages/redis/dist
+/packages/types/dist
