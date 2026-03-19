@@ -3,7 +3,6 @@
 import { Red_Hat_Display } from 'next/font/google';
 import { useRef } from 'react';
 import { useCssFallback } from '@/hooks/useCssFallback';
-import { useHeroWebGL } from '@/hooks/useHeroWebGL';
 import { cn } from '@/lib/utils';
 
 const redhat = Red_Hat_Display({
@@ -16,10 +15,6 @@ const HomePage = () => {
     const cssOverlay = useRef<HTMLDivElement>(null);
 
     const css = useCssFallback(sectionRef, cssOverlay);
-    const { canvasRef, onMouseMove, onMouseEnter, onMouseLeave } = useHeroWebGL({
-        sectionRef,
-        cssOverlay,
-    });
 
     return (
         <div className={cn('relative bg-[#0A0A0A]', redhat.className)}>
@@ -35,30 +30,19 @@ const HomePage = () => {
             <div
                 ref={sectionRef}
                 className="relative h-dvh w-full max-w-325 mx-auto border-x border-neutral-500/20 overflow-hidden"
-                onMouseMove={(e) => {
-                    onMouseMove(e);
-                    css.onMouseMove(e);
-                }}
-                onMouseEnter={() => {
-                    onMouseEnter();
-                    css.onMouseEnter();
-                }}
-                onMouseLeave={() => {
-                    onMouseLeave();
-                    css.onMouseLeave();
-                }}
+                onMouseMove={css.onMouseMove}
+                onMouseEnter={css.onMouseEnter}
+                onMouseLeave={css.onMouseLeave}
             >
-                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ display: 'block' }} />
-
                 <div
-                    className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
-                    style={{ backgroundImage: "url('/images/hero-dither.png')", display: 'none' }}
+                    className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+                    style={{ backgroundImage: "url('/images/hero-dither.png')" }}
                 />
 
                 <div
                     ref={cssOverlay}
                     className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
-                    style={{ backgroundImage: "url('/images/hero.png')", opacity: 0, display: 'none' }}
+                    style={{ backgroundImage: "url('/images/hero.png')", opacity: 0 }}
                 />
 
                 <div className="relative z-10 p-6 flex flex-col gap-4 h-full">
