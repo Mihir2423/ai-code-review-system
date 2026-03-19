@@ -13,7 +13,7 @@ const HomePage = () => {
                 <div className="w-325"></div>
             </div>
 
-            <div className="h-dvh w-full max-w-325 mx-auto border-x border-neutral-500/20 p-6 flex flex-col gap-4 bg-[url('/images/footer.png')] bg-cover bg-center bg-no-repeat">
+            <div className="h-dvh w-full max-w-325 mx-auto border-x border-neutral-500/20 p-6 flex flex-col gap-4 bg-[url('/images/hero-dither.png')] bg-cover bg-center bg-no-repeat">
                 <div className="flex flex-col items-center justify-center pt-32 gap-5 w-full">
                     <span className="uppercase text-white text-sm font-sans">Automated Code Review</span>
                     <div className="flex flex-col items-center justify-center gap-2">
@@ -23,10 +23,14 @@ const HomePage = () => {
                         </p>
                     </div>
                     <div className="flex items-center justify-center gap-3 mt-2">
-                        <button className="text-black bg-white rounded-full px-4 py-1.75 text-sm font-medium hover:bg-neutral-200 transition-colors">
+                        <button className="text-black bg-white px-4 py-1.75 text-sm font-medium hover:bg-neutral-200 transition-colors">
                             Start Free
                         </button>
-                        <button className="text-white bg-neutral-800 rounded-full px-3 py-2 text-sm font-medium hover:bg-neutral-700 transition-colors">
+                        <button className="relative hover:bg-neutral-900 text-white px-3 py-2 text-sm font-medium border border-neutral-900  transition-colors">
+                            <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-neutral-500 transition-colors group-hover:border-white"></span>
+                            <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-neutral-500 transition-colors group-hover:border-white"></span>
+                            <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-neutral-500 transition-colors group-hover:border-white"></span>
+                            <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-neutral-500 transition-colors group-hover:border-white"></span>
                             Watch Demo
                         </button>
                     </div>
