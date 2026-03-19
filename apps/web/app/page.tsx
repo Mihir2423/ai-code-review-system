@@ -1,19 +1,40 @@
-export default function Home() {
+import { Red_Hat_Display } from 'next/font/google';
+import { cn } from '@/lib/utils';
+
+const redhat = Red_Hat_Display({
+    variable: '--font-red-hat',
+    subsets: ['latin'],
+});
+
+const HomePage = () => {
     return (
-        <div className="flex min-h-screen font-mono items-center justify-center bg-zinc-50 dark:bg-black">
-            <main className="flex flex-col items-center gap-8 text-center">
-                <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">AI Code Review</h1>
-                <p className="max-w-2xl text-lg text-zinc-600 dark:text-zinc-400">
-                    Get intelligent code reviews powered by AI. Improve your code quality with automated suggestions and
-                    insights.
-                </p>
-                <a
-                    className="flex py-2 items-center justify-center bg-black px-8 text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-                    href="/repositories"
-                >
-                    Get Started
-                </a>
-            </main>
+        <div className={cn('relative bg-[#0A0A0A]', redhat.className)}>
+            <div className="h-16 fixed z-10 w-full border-b border-neutral-500/20 flex justify-center">
+                <div className="w-325"></div>
+            </div>
+
+            <div className="h-dvh w-full max-w-325 mx-auto border-x border-neutral-500/20 p-6 flex flex-col gap-4 bg-[url('/images/footer.png')] bg-cover bg-center bg-no-repeat">
+                <div className="flex flex-col items-center justify-center pt-32 gap-5 w-full">
+                    <span className="uppercase text-white text-sm">Powerful AI Tool</span>
+                    <div className="flex flex-col items-center justify-center gap-2">
+                        <h1 className="text-white font-medium text-2xl">Think deeper. Dream impossible.</h1>
+                        <p className="text-neutral-400 text-sm max-w-105 text-center">
+                            Vanta helps you create, optimize, and organize powerful prompts for tools like ChatGPT and
+                            Midjourney.
+                        </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-3 mt-2">
+                        <button className="text-black bg-white rounded-full px-4 py-1.75 text-sm font-medium hover:bg-neutral-200 transition-colors">
+                            Start Free
+                        </button>
+                        <button className="text-white bg-neutral-800 rounded-full px-3 py-2 text-sm font-medium hover:bg-neutral-700 transition-colors">
+                            Watch Demo
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     );
-}
+};
+
+export default HomePage;
