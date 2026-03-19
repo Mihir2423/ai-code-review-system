@@ -24,7 +24,12 @@ const HomePage = () => {
     return (
         <div className={cn('relative bg-[#0A0A0A]', redhat.className)}>
             <div className="h-16 fixed z-10 w-full border-b border-neutral-500/20 flex justify-center">
-                <div className="w-325"></div>
+                <div className="w-325 flex items-center pl-4">
+                    <div className="text-base font-semibold tracking-tight text-white flex items-center gap-1">
+                        <span>Open</span>
+                        <span className="bg-orange-500 px-1.5 text-black mr-px font-bold rounded">Review</span>
+                    </div>
+                </div>
             </div>
 
             <div
@@ -66,14 +71,14 @@ const HomePage = () => {
                             </p>
                         </div>
                         <div className="flex items-center justify-center gap-3 mt-2">
-                            <button className="text-black bg-white px-4 py-1.75 text-sm font-medium hover:bg-neutral-200 transition-colors">
+                            <button className="text-black bg-orange-500 px-4 py-1.75 text-sm font-medium hover:bg-orange-400 transition-colors">
                                 Start Free
                             </button>
-                            <button className="relative hover:bg-neutral-900 text-white px-3 py-2 text-sm font-medium border border-neutral-900 transition-colors">
-                                <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-neutral-500 transition-colors group-hover:border-white" />
-                                <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-neutral-500 transition-colors group-hover:border-white" />
-                                <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-neutral-500 transition-colors group-hover:border-white" />
-                                <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-neutral-500 transition-colors group-hover:border-white" />
+                            <button className="relative hover:bg-orange-900/30 text-white px-3 py-2 text-sm font-medium border border-orange-900/30 transition-colors">
+                                <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-orange-500 transition-colors group-hover:border-white" />
+                                <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-orange-500 transition-colors group-hover:border-white" />
+                                <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500 transition-colors group-hover:border-white" />
+                                <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500 transition-colors group-hover:border-white" />
                                 Watch Demo
                             </button>
                         </div>
