@@ -15,12 +15,11 @@ const HomePage = () => {
 
             <div className="h-dvh w-full max-w-325 mx-auto border-x border-neutral-500/20 p-6 flex flex-col gap-4 bg-[url('/images/footer.png')] bg-cover bg-center bg-no-repeat">
                 <div className="flex flex-col items-center justify-center pt-32 gap-5 w-full">
-                    <span className="uppercase text-white text-sm">Powerful AI Tool</span>
+                    <span className="uppercase text-white text-sm font-sans">Automated Code Review</span>
                     <div className="flex flex-col items-center justify-center gap-2">
-                        <h1 className="text-white font-medium text-2xl">Think deeper. Dream impossible.</h1>
-                        <p className="text-neutral-400 text-sm max-w-105 text-center">
-                            Vanta helps you create, optimize, and organize powerful prompts for tools like ChatGPT and
-                            Midjourney.
+                        <h1 className="text-white font-medium text-3xl">Review smarter. Ship faster with AI.</h1>
+                        <p className="text-neutral-400 text-sm max-w-80 text-center">
+                            Automate code reviews with AI. Get instant feedback on pull requests.
                         </p>
                     </div>
                     <div className="flex items-center justify-center gap-3 mt-2">
