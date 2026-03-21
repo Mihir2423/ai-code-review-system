@@ -3,7 +3,7 @@
 import { Red_Hat_Display } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { HeroSection } from './_components/hero';
-import { RepoSection } from './_components/repo';
+import { SectionWrapper } from './_components/section-wrapper';
 import { Separator } from './_components/separator';
 
 const redhat = Red_Hat_Display({
@@ -26,7 +26,22 @@ const HomePage = () => {
             <div className="w-full max-w-325 mx-auto border-x border-neutral-500/20  flex flex-col">
                 <HeroSection />
                 <Separator />
-                <RepoSection />
+                <SectionWrapper
+                    subtitle="Repository"
+                    title="View and manage all your repositories"
+                    description="Connect repositories to get AI-powered code reviews and automated quality checks for your
+            projects."
+                    src="/images/repo-list.png"
+                    link="/repositories"
+                />
+                <SectionWrapper
+                    subtitle="Review History"
+                    title="Track all your code reviews in one place"
+                    src="/images/review.png"
+                    description="Review past code changes, see feedback provided, and track improvement over time across all your
+            repositories."
+                    link="/review-history"
+                />
             </div>
         </div>
     );
