@@ -1,5 +1,3 @@
-// apps/pr-processor/src/index.ts
-
 import 'dotenv/config';
 import { createAppAuth } from '@octokit/auth-app';
 import prisma from '@repo/db';
@@ -10,13 +8,14 @@ import { Octokit } from 'octokit';
 const QUEUE_NAME = 'pr-review';
 const COMMENT_QUEUE = 'pr-comment';
 const CONTEXT_QUEUE = 'pr-context';
+const ISSUES_QUEUE = 'pr-issues';
 
 interface PRReviewMessage {
     owner: string;
     repo: string;
     prNumber: number;
     userId: string;
-    installationId: string; // ✅ added
+    installationId: string;
 }
 
 interface PRDetails {
@@ -27,11 +26,41 @@ interface PRDetails {
     commitSha: string;
 }
 
+interface CommentMessage {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    installationId: string;
+    comment: string;
+}
+
+interface ReviewIssue {
+    file: string;
+    line: number;
+    severity: 'critical' | 'warning' | 'suggestion';
+    description: string;
+    oldCode: string;
+    newCode: string;
+    suggestion: string;
+}
+
+interface PRIssuesMessage {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    installationId: string;
+    commitSha: string;
+    issues: ReviewIssue[];
+    summary?: string;
+}
+
 const prReviewQueue = createQueue(QUEUE_NAME);
 const commentQueue = createQueue(COMMENT_QUEUE);
 const contextQueue = createQueue(CONTEXT_QUEUE);
 
 let prReviewWorker: ReturnType<typeof createWorker>;
+let commentWorker: ReturnType<typeof createWorker>;
+let issuesWorker: ReturnType<typeof createWorker>;
 
 const CHECK_NAME = 'AI Code Review';
 
@@ -52,7 +81,6 @@ async function createCheckRun(owner: string, repo: string, commitSha: string, oc
     return checkRun.id;
 }
 
-// ✅ Replaces getAccessToken — authenticates as the bot
 async function getBotOctokit(installationId: string): Promise<Octokit> {
     const auth = createAppAuth({
         appId: process.env.GITHUB_APP_ID!,
@@ -64,12 +92,7 @@ async function getBotOctokit(installationId: string): Promise<Octokit> {
     return new Octokit({ auth: token });
 }
 
-async function reviewPullRequest(
-    owner: string,
-    repo: string,
-    prNumber: number,
-    octokit: Octokit, // ✅ accepts octokit instead of accessToken
-): Promise<PRDetails> {
+async function reviewPullRequest(owner: string, repo: string, prNumber: number, octokit: Octokit): Promise<PRDetails> {
     const { data: pr } = await octokit.rest.pulls.get({
         owner,
         repo,
@@ -96,7 +119,65 @@ async function reviewPullRequest(
     };
 }
 
-async function startWorker(): Promise<void> {
+async function postComment(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    comment: string,
+    octokit: Octokit,
+): Promise<void> {
+    await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: comment,
+    });
+
+    logger.info({ owner, repo, prNumber }, 'Posted comment to pull request');
+}
+
+async function postInlineComment(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    commitSha: string,
+    issue: ReviewIssue,
+    octokit: Octokit,
+): Promise<void> {
+    const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵';
+
+    const oldCode = issue.oldCode || 'N/A';
+    const newCode = issue.newCode || 'N/A';
+    const side = issue.oldCode && !issue.newCode ? 'LEFT' : 'RIGHT';
+    const changeDisplay =
+        issue.oldCode && issue.newCode
+            ? `\`${oldCode}\` → \`${newCode}\``
+            : issue.oldCode
+              ? `Removed: \`${oldCode}\``
+              : `Added: \`${newCode}\``;
+
+    if (!issue.line || issue.line <= 0) {
+        logger.warn({ owner, repo, prNumber, issue }, 'Skipping inline comment: invalid line number');
+        return;
+    }
+
+    const body = `${emoji} **${issue.severity.toUpperCase()}** at ${issue.file}:${issue.line}\n\n${issue.description}\n\n**Change:** ${changeDisplay}\n\n**Suggestion:** ${issue.suggestion}`;
+
+    await octokit.rest.pulls.createReviewComment({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: commitSha,
+        path: issue.file,
+        line: issue.line,
+        side,
+        body,
+    });
+
+    logger.info({ owner, repo, prNumber, file: issue.file, line: issue.line }, 'Posted inline comment to pull request');
+}
+
+async function startPrReviewWorker(): Promise<void> {
     prReviewWorker = createWorker(QUEUE_NAME, async (job) => {
         const { owner, repo, prNumber, userId, installationId } = job.data as PRReviewMessage;
 
@@ -178,7 +259,6 @@ async function startWorker(): Promise<void> {
                 logger.info({ repoId: repository.id, prNumber, checkRunId }, 'Sent context retrieval message to queue');
             }
 
-            // ✅ post initial "processing" comment as bot
             await addJob(
                 commentQueue,
                 'pr-comment',
@@ -186,7 +266,7 @@ async function startWorker(): Promise<void> {
                     owner,
                     repo,
                     prNumber,
-                    installationId, // ✅ was userId
+                    installationId,
                     comment: `> [!NOTE]
 > Currently processing new changes in this PR. This may take a few minutes, please wait...
 >
@@ -240,11 +320,90 @@ async function startWorker(): Promise<void> {
     logger.info({ queue: QUEUE_NAME }, 'PR review worker started');
 }
 
+async function startCommentWorker(): Promise<void> {
+    commentWorker = createWorker(COMMENT_QUEUE, async (job) => {
+        const { owner, repo, prNumber, installationId, comment } = job.data as CommentMessage;
+
+        logger.info({ owner, repo, prNumber }, 'Processing pr-comment job');
+
+        if (!installationId) {
+            logger.error('No installationId provided in message');
+            return;
+        }
+
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
+            return;
+        }
+
+        try {
+            await postComment(owner, repo, prNumber, comment, octokit);
+        } catch (error) {
+            logger.error({ error, owner, repo, prNumber }, 'Failed to post comment');
+        }
+    });
+
+    logger.info({ queue: COMMENT_QUEUE }, 'Comment worker started');
+}
+
+async function startIssuesWorker(): Promise<void> {
+    issuesWorker = createWorker(ISSUES_QUEUE, async (job) => {
+        const { owner, repo, prNumber, installationId, commitSha, issues, summary } = job.data as PRIssuesMessage;
+
+        logger.info({ owner, repo, prNumber }, 'Processing pr-issues job');
+
+        if (!installationId) {
+            logger.error('No installationId provided in message');
+            return;
+        }
+
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
+            return;
+        }
+
+        const failedIssues: { issue: ReviewIssue; error: unknown }[] = [];
+        for (const issue of issues) {
+            try {
+                await postInlineComment(owner, repo, prNumber, commitSha, issue, octokit);
+            } catch (error) {
+                logger.error({ error, owner, repo, prNumber, issue }, 'Failed to post inline comment');
+                failedIssues.push({ issue, error });
+            }
+        }
+
+        if (failedIssues.length > 0) {
+            logger.error(
+                { owner, repo, prNumber, failedCount: failedIssues.length },
+                'Some inline comments failed to post',
+            );
+        }
+
+        if (summary) {
+            try {
+                await postComment(owner, repo, prNumber, summary, octokit);
+            } catch (error) {
+                logger.error({ error, owner, repo, prNumber }, 'Failed to post summary comment');
+            }
+        }
+    });
+
+    logger.info({ queue: ISSUES_QUEUE }, 'Issues worker started');
+}
+
 async function main(): Promise<void> {
     logger.info('PR Processor service starting...');
 
     try {
-        await startWorker();
+        await startPrReviewWorker();
+        await startCommentWorker();
+        await startIssuesWorker();
     } catch (error) {
         logger.error({ error }, 'Failed to start PR processor');
 
@@ -265,6 +424,8 @@ main();
 process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down gracefully...');
     await prReviewWorker?.close();
+    await commentWorker?.close();
+    await issuesWorker?.close();
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();
@@ -274,6 +435,8 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down gracefully...');
     await prReviewWorker?.close();
+    await commentWorker?.close();
+    await issuesWorker?.close();
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();

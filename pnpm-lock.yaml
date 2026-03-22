@@ -384,46 +384,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  services/github-comment-service:
-    dependencies:
-      '@octokit/auth-app':
-        specifier: ^8.2.0
-        version: 8.2.0
-      '@repo/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@repo/logger':
-        specifier: workspace:*
-        version: link:../../packages/logger
-      '@repo/queue':
-        specifier: workspace:*
-        version: link:../../packages/queue
-      cors:
-        specifier: ^2.8.6
-        version: 2.8.6
-      dotenv:
-        specifier: ^17.3.1
-        version: 17.3.1
-      express:
-        specifier: ^5.2.1
-        version: 5.2.1
-      octokit:
-        specifier: ^5.0.5
-        version: 5.0.5
-    devDependencies:
-      '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
-      '@types/node':
-        specifier: ^20.19.37
-        version: 20.19.37
-      tsx:
-        specifier: ^4.21.0
-        version: 4.21.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   services/pr-processor:
     dependencies:
       '@octokit/auth-app':

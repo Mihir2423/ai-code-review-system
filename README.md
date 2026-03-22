@@ -45,7 +45,6 @@ sequenceDiagram
     participant PP as services/pr-processor
     participant RI as services/repo-indexer
     participant AIR as services/ai-review-worker
-    participant GCS as services/github-comment-service
 
     User->>GitHub: Creates/opens PR
     GitHub->>WS: Webhook: pull_request opened
@@ -57,20 +56,20 @@ sequenceDiagram
     PP->>GitHub: Get PR details & diff
     PP->>DB: Create review record (status: pending)
     PP->>RI: Add job to pr-context queue
-    PP->>GCS: Add job to pr-comment (initial comment)
+    PP->>PP: Add job to pr-comment (initial comment)
 
-    GCS->>GitHub: Post "processing" comment
+    PP->>GitHub: Post "processing" comment
 
     RI->>RI: Fetch similar code from vector store
     RI->>AIR: Add job to pr-ai-review queue
 
     AIR->>AIR: Generate AI code review
     AIR->>DB: Update review record (status: completed)
-    AIR->>GCS: Add job to pr-issues queue
-    AIR->>GCS: Add job to pr-comment (summary)
+    AIR->>PP: Add job to pr-issues queue
+    AIR->>PP: Add job to pr-comment (summary)
 
-    GCS->>GitHub: Post inline comments for each issue
-    GCS->>GitHub: Post summary comment
+    PP->>GitHub: Post inline comments for each issue
+    PP->>GitHub: Post summary comment
 ```
 
 ## What's inside?
@@ -87,8 +86,7 @@ sequenceDiagram
 - `packages/redis`: Redis client
 - `packages/types`: shared TypeScript types
 - `services/ai-review-worker`: AI review worker service
-- `services/github-comment-service`: GitHub comment service
-- `services/pr-processor`: PR processor service
+- `services/pr-processor`: PR processor and GitHub comment service
 - `services/repo-indexer`: Repository indexing service
 - `services/webhook-service`: Webhook service
 

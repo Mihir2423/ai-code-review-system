@@ -121,6 +121,7 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
     const lines = diff.split('\n');
     let currentFile = '';
     let hunkStartLine = 0;
+    let currentLineInHunk = 0;
 
     for (const line of lines) {
         if (line.startsWith('diff --git')) {
@@ -131,20 +132,28 @@ function findLineNumberInDiff(diff: string, file: string, code: string): number 
             }
         } else if (line.startsWith('@@')) {
             const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
-            if (match && match[1]) hunkStartLine = parseInt(match[1], 10);
+            if (match && match[1]) {
+                hunkStartLine = parseInt(match[1], 10);
+                currentLineInHunk = hunkStartLine;
+            }
             logger.debug({ hunkStartLine, currentFile }, 'Found hunk header');
         } else if (currentFile === file) {
+            const isAddedOrContext = line.startsWith('+') || line.startsWith(' ');
+            const isRemoved = line.startsWith('-');
+
             for (const variant of searchVariants) {
                 if (variant && line.includes(variant)) {
                     logger.debug(
-                        { foundLine: hunkStartLine, matchedLine: line.substring(0, 50) },
+                        { foundLine: currentLineInHunk, matchedLine: line.substring(0, 50) },
                         'Found matching line',
                     );
-                    return hunkStartLine;
+                    return currentLineInHunk;
                 }
             }
-            if (line.startsWith('+') || line.startsWith(' ')) {
-                hunkStartLine++;
+            if (isAddedOrContext) {
+                currentLineInHunk++;
+            } else if (isRemoved) {
+                currentLineInHunk++;
             }
         }
     }
