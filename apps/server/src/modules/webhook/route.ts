@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
 import { addJob, createQueue } from '@repo/queue';
@@ -8,15 +7,16 @@ import express from 'express';
 const QUEUE_NAME = 'pr-review';
 const REPO_INDEX_QUEUE_NAME = 'repo-index';
 
-const app = express();
-const PORT = process.env.PORT || 4000;
-const WEBHOOK_SECRET = process.env.GITHUB_BOT_WEBHOOK_SECRET!;
 const prReviewQueue = createQueue(QUEUE_NAME);
 const repoIndexQueue = createQueue(REPO_INDEX_QUEUE_NAME);
 
-app.use(express.json());
+const WEBHOOK_SECRET = process.env.GITHUB_BOT_WEBHOOK_SECRET;
 
 function verifySignature(req: express.Request): boolean {
+    if (!WEBHOOK_SECRET) {
+        logger.warn('GITHUB_BOT_WEBHOOK_SECRET not configured, skipping signature verification');
+        return true;
+    }
     const signature = req.headers['x-hub-signature-256'] as string;
     if (!signature) return false;
     const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET);
@@ -73,11 +73,9 @@ async function upsertRepositories(repos: any[], installationRecordId: string, us
     return results;
 }
 
-app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'webhook-service' });
-});
+const router = express.Router();
 
-app.post('/api/webhooks/github', async (req, res) => {
+router.post('/github', async (req, res) => {
     if (!verifySignature(req)) {
         logger.warn('Invalid webhook signature');
         return res.sendStatus(401);
@@ -228,13 +226,7 @@ app.post('/api/webhooks/github', async (req, res) => {
     res.sendStatus(200);
 });
 
-async function main(): Promise<void> {
-    app.listen(PORT, () => {
-        logger.info({ port: PORT }, 'Webhook service started');
-    });
-}
-
-main();
+export { router as webhookRoutes, prReviewQueue };
 
 process.on('SIGTERM', async () => {
     await prReviewQueue.close();
