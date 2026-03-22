@@ -2,6 +2,8 @@
 
 import { GitBranch, Settings } from 'lucide-react';
 import { Red_Hat_Display } from 'next/font/google';
+import Image from 'next/image';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { HeroSection } from './_components/hero';
 import { SectionWrapper } from './_components/section-wrapper';
@@ -51,7 +53,43 @@ const HomePage = () => {
                         />
                     </div>
                 </div>
-                <div className="h-dvh w-full" />
+                <Separator />
+                <div className="min-h-dvh p-1 py-20 flex items-center justify-center">
+                    <div className="w-full relative gap-12 pt-20 overflow-hidden h-full bg-[url('/images/cta.png')] bg-blend-multiply bg-black/50 text-center justify-between bg-no-repeat bg-cover bg-center flex items-center flex-col">
+                        <div className="flex flex-col justify-center items-center gap-6 z-10">
+                            <div className="flex flex-col gap-2 items-center">
+                                <span className="text-white text-4xl font-semibold">Review code like a pro</span>
+                                <p className="text-base font-medium text-white max-w-120 text-center">
+                                    Get instant, AI-powered code reviews on every pull request. Catch bugs early and
+                                    ship with confidence{' '}
+                                </p>
+                            </div>
+                            <div className="flex items-center justify-center gap-3 mt-2 z-10">
+                                <Link
+                                    href="/repositories"
+                                    className="text-black bg-orange-500 px-4 py-1.75 text-sm font-medium hover:bg-orange-400 transition-colors"
+                                >
+                                    Start Free
+                                </Link>
+                                <button className="relative hover:bg-orange-900/30 text-white px-3 py-2 text-sm font-medium border border-orange-900/30 transition-colors">
+                                    <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-orange-500 transition-colors group-hover:border-white" />
+                                    <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-orange-500 transition-colors group-hover:border-white" />
+                                    <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500 transition-colors group-hover:border-white" />
+                                    <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500 transition-colors group-hover:border-white" />
+                                    Watch Demo
+                                </button>
+                            </div>
+                        </div>
+                        <img src="/images/cta-section.png" alt="cta-section" className="w-[70%] h-auto bg-cover z-10" />
+                        <div
+                            className="top-0 left-0 z-[9] absolute w-full h-1/2 rotate-[180deg]"
+                            style={{
+                                maskImage: 'linear-gradient(transparent, black 85%)',
+                                backgroundColor: 'rgb(12, 12, 12)',
+                            }}
+                        />
+                    </div>
+                </div>
             </div>
         </div>
     );

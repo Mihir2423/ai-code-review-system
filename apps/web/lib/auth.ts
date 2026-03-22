@@ -15,5 +15,6 @@ export const auth = betterAuth({
             scope: ['repo', 'admin:repo_hook'],
         },
     },
+    secret: process.env.BETTER_AUTH_SECRET,
     plugins: [nextCookies(), bearer()],
 });
