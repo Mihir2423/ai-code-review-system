@@ -1,8 +1,7 @@
 'use client';
 
-import { GitBranch, Settings } from 'lucide-react';
+import { ExternalLink, GitBranch, Settings } from 'lucide-react';
 import { Red_Hat_Display } from 'next/font/google';
-import Image from 'next/image';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { HeroSection } from './_components/hero';
@@ -15,8 +14,10 @@ const redhat = Red_Hat_Display({
 });
 
 const HomePage = () => {
+    const date = new Date();
+    const year = date.getFullYear();
     return (
-        <div className={cn('relative bg-[#0A0A0A]', redhat.className)}>
+        <div className={cn('relative bg-[#0A0A0A] pb-10', redhat.className)}>
             <div className="h-16 fixed z-90 w-full bg-[#0A0A0A] border-b border-neutral-500/20 flex justify-center">
                 <div className="w-325 flex items-center pl-4 border-x border-neutral-500/20">
                     <div className="text-base font-semibold tracking-tight text-white flex items-center gap-1">
@@ -54,7 +55,12 @@ const HomePage = () => {
                     </div>
                 </div>
                 <Separator />
-                <div className="min-h-dvh p-1 py-20 flex items-center justify-center">
+                <div className="min-h-dvh p-1 py-20 relative flex items-center justify-center">
+                    <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-orange-500 transition-colors group-hover:border-white" />
+                    <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-orange-500 transition-colors group-hover:border-white" />
+                    <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500 transition-colors group-hover:border-white" />
+                    <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500 transition-colors group-hover:border-white" />
+
                     <div className="w-full relative gap-12 pt-20 overflow-hidden h-full bg-[url('/images/cta.png')] bg-blend-multiply bg-black/50 text-center justify-between bg-no-repeat bg-cover bg-center flex items-center flex-col">
                         <div className="flex flex-col justify-center items-center gap-6 z-10">
                             <div className="flex flex-col gap-2 items-center">
@@ -88,6 +94,29 @@ const HomePage = () => {
                                 backgroundColor: 'rgb(12, 12, 12)',
                             }}
                         />
+                    </div>
+                </div>
+                <Separator />
+                <div className="relative w-full border-b border-neutral-500/20 flex items-center justify-between px-4 h-[53px]">
+                    <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500 transition-colors group-hover:border-white" />
+                    <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500 transition-colors group-hover:border-white" />
+
+                    <p className="text-neutral-400 font-medium text-base font-mono">
+                        © {year} Open Review. All rights reserved.
+                    </p>
+                    <div className="flex items-center gap-1">
+                        <p className="text-neutral-400 font-medium text-base font-mono">Created by</p>
+                        <Link
+                            href="https://x.com/mihirtwt"
+                            target="_blank"
+                            rel="noopener"
+                            className="flex items-center gap-1 group"
+                        >
+                            <p className="text-neutral-400 font-medium group-hover:underline transition-all ease-in-out duration-200 text-base font-mono">
+                                Mihir
+                            </p>
+                            <ExternalLink className="text-neutral-400" size={14} />
+                        </Link>
                     </div>
                 </div>
             </div>

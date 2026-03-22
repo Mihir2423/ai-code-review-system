@@ -29,9 +29,9 @@ export const SectionWrapper = ({ src, title, subtitle, description, link, icon: 
                     />
                 </div>
                 <div className="bg-[#121212] flex flex-col justify-center p-16 gap-6">
-                    <div className="flex items-center gap-1 text-neutral-500 text-xs">
+                    <div className="flex items-center gap-1 text-orange-500 text-xs">
                         <Icon size={12} />
-                        <span className="text-neutral-500 text-xs uppercase font-medium">{subtitle}</span>
+                        <span className="text-orange-500 text-xs uppercase font-medium">{subtitle}</span>
                     </div>
                     <h1 className="text-white text-5xl font-medium text-balance">{title}</h1>
                     <p className="text-neutral-500 text-base font-medium">{description}</p>
