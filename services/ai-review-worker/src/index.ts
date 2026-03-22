@@ -1,13 +1,16 @@
 import 'dotenv/config';
 
+import { createAppAuth } from '@octokit/auth-app';
 import { generateCodeReview, type ReviewIssue } from '@repo/ai';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
 import { addJob, createQueue, createWorker } from '@repo/queue';
 import type { IssueWithMetadata } from '@repo/types';
+import { Octokit } from 'octokit';
 
 const QUEUE_NAME = 'pr-ai-review';
 const ISSUES_QUEUE = 'pr-issues';
+const CHECK_NAME = 'AI Code Review';
 
 interface AIReviewMessage {
     title: string;
@@ -21,12 +24,72 @@ interface AIReviewMessage {
     userId: string;
     installationId: string;
     commitSha: string;
+    checkRunId?: number;
 }
 
 const aiReviewQueue = createQueue(QUEUE_NAME);
 const issuesQueue = createQueue(ISSUES_QUEUE);
 
 let aiReviewWorker: ReturnType<typeof createWorker>;
+
+async function getBotOctokit(installationId: string): Promise<Octokit> {
+    const auth = createAppAuth({
+        appId: process.env.GITHUB_APP_ID!,
+        privateKey: process.env.GITHUB_BOT_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        installationId,
+    });
+
+    const { token } = await auth({ type: 'installation' });
+    return new Octokit({ auth: token });
+}
+
+async function updateCheckRun(
+    owner: string,
+    repo: string,
+    checkRunId: number,
+    conclusion: 'success' | 'neutral' | 'failure',
+    summary: string,
+    issues: ReviewIssue[],
+    octokit: Octokit,
+): Promise<void> {
+    const annotations = issues.map(
+        (
+            issue,
+        ): {
+            path: string;
+            start_line: number;
+            end_line: number;
+            annotation_level: 'failure' | 'warning' | 'notice';
+            message: string;
+            raw_details: string;
+        } => ({
+            path: issue.file,
+            start_line: issue.line,
+            end_line: issue.line,
+            annotation_level:
+                issue.severity === 'critical' ? 'failure' : issue.severity === 'warning' ? 'warning' : 'notice',
+            message: `${issue.severity.toUpperCase()}: ${issue.description}`,
+            raw_details: issue.suggestion,
+        }),
+    );
+
+    const hasCriticalOrWarning = issues.some((i) => i.severity === 'critical' || i.severity === 'warning');
+
+    await octokit.rest.checks.update({
+        owner,
+        repo,
+        check_run_id: checkRunId,
+        status: 'completed',
+        conclusion: hasCriticalOrWarning ? conclusion : 'success',
+        output: {
+            title: `Review Complete - ${issues.length} issues found`,
+            summary,
+            annotations: annotations.slice(0, 50),
+        },
+    });
+
+    logger.info({ owner, repo, checkRunId, conclusion }, 'Updated check run');
+}
 
 function stripMarkdownFences(code: string): string {
     return code
@@ -131,11 +194,31 @@ async function startWorker(): Promise<void> {
         const reviewMessage = job.data as AIReviewMessage;
         logger.info({ reviewMessage }, 'Received AI review event');
 
-        const { title, description, context, diff, repoId, owner, repo, prNumber, userId, installationId, commitSha } =
-            reviewMessage;
+        const {
+            title,
+            description,
+            context,
+            diff,
+            repoId,
+            owner,
+            repo,
+            prNumber,
+            userId,
+            installationId,
+            commitSha,
+            checkRunId,
+        } = reviewMessage;
 
         if (!installationId) {
             logger.error('No installationId provided in message');
+            return;
+        }
+
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
             return;
         }
 
@@ -268,6 +351,25 @@ async function startWorker(): Promise<void> {
                 },
             });
             logger.info({ repoId, prNumber }, 'Updated review status to completed');
+
+            if (checkRunId) {
+                const hasCritical = uniqueIssues.some((i) => i.severity === 'critical');
+                const hasWarning = uniqueIssues.some((i) => i.severity === 'warning');
+
+                try {
+                    await updateCheckRun(
+                        owner,
+                        repo,
+                        checkRunId,
+                        hasCritical ? 'failure' : hasWarning ? 'neutral' : 'success',
+                        `AI Code Review found ${uniqueIssues.length} issues:\n- ${uniqueIssues.filter((i) => i.severity === 'critical').length} critical\n- ${uniqueIssues.filter((i) => i.severity === 'warning').length} warnings\n- ${uniqueIssues.filter((i) => i.severity === 'suggestion').length} suggestions\n\n${review.summary}`,
+                        uniqueIssues,
+                        octokit,
+                    );
+                } catch (error) {
+                    logger.error({ error, checkRunId }, 'Failed to update check run');
+                }
+            }
         } catch (error) {
             logger.error(
                 { error: String(error), repoId, prNumber, stack: error instanceof Error ? error.stack : undefined },
@@ -298,6 +400,22 @@ async function startWorker(): Promise<void> {
                 .catch((err: unknown) => {
                     logger.error({ err, repoId, prNumber }, 'Failed to update review status to failed');
                 });
+
+            if (checkRunId) {
+                try {
+                    await updateCheckRun(
+                        owner,
+                        repo,
+                        checkRunId,
+                        'failure',
+                        `AI Code Review failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                        [],
+                        octokit,
+                    );
+                } catch (updateError) {
+                    logger.error({ error: updateError, checkRunId }, 'Failed to update check run to failure');
+                }
+            }
         }
     });
 

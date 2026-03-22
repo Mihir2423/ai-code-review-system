@@ -33,6 +33,25 @@ const contextQueue = createQueue(CONTEXT_QUEUE);
 
 let prReviewWorker: ReturnType<typeof createWorker>;
 
+const CHECK_NAME = 'AI Code Review';
+
+async function createCheckRun(owner: string, repo: string, commitSha: string, octokit: Octokit): Promise<number> {
+    const { data: checkRun } = await octokit.rest.checks.create({
+        owner,
+        repo,
+        name: CHECK_NAME,
+        head_sha: commitSha,
+        status: 'in_progress',
+        output: {
+            title: 'AI Review in Progress',
+            summary: 'Analyzing pull request changes...',
+        },
+    });
+
+    logger.info({ owner, repo, checkRunId: checkRun.id }, 'Created check run');
+    return checkRun.id;
+}
+
 // ✅ Replaces getAccessToken — authenticates as the bot
 async function getBotOctokit(installationId: string): Promise<Octokit> {
     const auth = createAppAuth({
@@ -112,6 +131,8 @@ async function startWorker(): Promise<void> {
                 where: { owner, name: repo, userId },
             });
 
+            const checkRunId = await createCheckRun(owner, repo, prData.commitSha, octokit);
+
             if (repository) {
                 await prisma.review.upsert({
                     where: {
@@ -144,16 +165,17 @@ async function startWorker(): Promise<void> {
                         repo,
                         prNumber,
                         userId,
-                        installationId, // ✅ forward installationId
+                        installationId,
                         diff: prData.diff,
                         commitSha: prData.commitSha,
+                        checkRunId,
                     },
                     {
                         jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}`,
                     },
                 );
 
-                logger.info({ repoId: repository.id, prNumber }, 'Sent context retrieval message to queue');
+                logger.info({ repoId: repository.id, prNumber, checkRunId }, 'Sent context retrieval message to queue');
             }
 
             // ✅ post initial "processing" comment as bot

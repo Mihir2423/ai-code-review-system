@@ -22,6 +22,7 @@ interface PRContextMessage {
     diff: string;
     commitSha: string;
     installationId: string;
+    checkRunId?: number;
 }
 
 const repoIndexQueue = createQueue(QUEUE_NAME);
@@ -77,7 +78,8 @@ async function startContextWorker(): Promise<void> {
         const contextMessage = job.data as PRContextMessage;
         logger.info({ contextMessage }, 'Received pr-context event');
 
-        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha, installationId } = contextMessage;
+        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha, installationId, checkRunId } =
+            contextMessage;
         logger.info({ query, repoId }, 'Retrieving context for PR');
 
         try {
@@ -96,8 +98,9 @@ async function startContextWorker(): Promise<void> {
                 userId,
                 commitSha,
                 installationId,
+                checkRunId,
             });
-            logger.info({ repoId, prNumber }, 'Sent AI review message to queue');
+            logger.info({ repoId, prNumber, checkRunId }, 'Sent AI review message to queue');
         } catch (error) {
             logger.error({ error, repoId, prNumber }, 'Failed to retrieve context');
         }
