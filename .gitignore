@@ -34,9 +34,8 @@ dist
 *.swp
 *.swo
 
-# generated - uncomment below if you want to ignore generated folders
-# generated
-
 skills-lock.json
 
 .agents
+
+generated
