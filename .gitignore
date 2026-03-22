@@ -34,8 +34,8 @@ dist
 *.swp
 *.swo
 
-generated
-
 skills-lock.json
 
 .agents
+
+generated

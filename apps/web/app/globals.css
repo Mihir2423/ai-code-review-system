@@ -120,6 +120,24 @@ button {
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    width: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    width: 3px;
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;
