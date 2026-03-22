@@ -3,12 +3,15 @@ import cors from 'cors';
 import express from 'express';
 import 'dotenv/config';
 import { authMiddleware } from './middleware/auth.js';
-import { githubRoutes, reviewRoutes } from './modules/index.js';
+import { githubRoutes, prReviewQueue, reviewRoutes, webhookRoutes } from './modules/index.js';
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'https://ai-code-review-system-auqo.onrender.com'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+    'http://localhost:3000',
+    'https://ai-code-review-system-auqo.onrender.com',
+];
 
 app.use(
     cors({
@@ -25,6 +28,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/github', authMiddleware, githubRoutes);
 app.use('/api/review', authMiddleware, reviewRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 async function start() {
     app.listen(PORT, () => {
@@ -35,11 +39,13 @@ async function start() {
 start();
 
 process.on('SIGTERM', async () => {
+    await prReviewQueue.close();
     logger.info('Received SIGTERM, shutting down gracefully...');
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
+    await prReviewQueue.close();
     logger.info('Received SIGINT, shutting down gracefully...');
     process.exit(0);
 });
