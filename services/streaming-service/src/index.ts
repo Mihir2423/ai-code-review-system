@@ -9,7 +9,6 @@ import { authorizeReviewAccess } from './middleware/authorize.js';
 
 const EVENTS_CHANNEL_PREFIX = 'review-events:';
 
-console.log('Redis URL:', process.env.REDIS_URL);
 interface SSEClient {
     id: string;
     reviewId: string;

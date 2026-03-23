@@ -111,29 +111,10 @@ export const Review = ({ review }: { review: ReviewHistoryItem }) => {
     };
     return (
         <section key={review.id} className="relative max-w-full">
-            {!open && (
-                <div
-                    className="bottom-0 left-0 z-[9] absolute flex items-end justify-center pb-3 w-full h-1/2 rounded-b-lg"
-                    style={{
-                        maskImage: 'linear-gradient(transparent, black 85%)',
-                        backgroundColor: 'rgb(12, 12, 12)',
-                    }}
-                >
-                    <button onClick={() => setOpen(!open)} className="group">
-                        <span className="group-hover:text-white text-neutral-500 transition-colors ease-in-out duration-150 text-sm font-medium font-mono">
-                            Show More
-                        </span>
-                    </button>
-                </div>
-            )}
             <div
                 onClick={() => setOpen(!open)}
                 className={cn(
-                    'cursor-pointer transition-all shadow-[0px_0.75px_0px_0px_rgba(255,252,252,0.3)_inset]  ease-in-out duration-200 border border-black rounded-lg gap-3 px-3 py-4 bg-[#292929]',
-                    {
-                        'rounded-b-none': !open,
-                        'border-b-0': open,
-                    },
+                    'cursor-pointer transition-all shadow-[0px_0.75px_0px_0px_rgba(255,252,252,0.3)_inset] rounded-t-lg ease-in-out duration-200 border border-black gap-3 px-3 py-4 bg-[#292929]',
                 )}
             >
                 <div className="flex flex-wrap items-center justify-between gap-4 px-1">
@@ -166,78 +147,25 @@ export const Review = ({ review }: { review: ReviewHistoryItem }) => {
                         </span>
                     </div>
                 </div>
-            </div>
-            <div
-                className={cn(
-                    'bg-[#292929] relative rounded-lg transition-all ease-in-out duration-200  p-4 md:p-8 shadow-2xl overflow-y-auto  border border-black ',
-                    {
-                        'max-h-80 rounded-t-none rounded-b-lg border-t-0': !open,
-                        'mt-3 max-h-180 rounded-lg': open,
-                    },
-                )}
-            >
-                <div className="prose-neutral max-w-full overflow-hidden">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                        {review.review}
-                    </ReactMarkdown>
-                </div>
+        </div>
+        <div className=' px-3 py-4 bg-[#292929] border border-black border-t-0 rounded-b-lg'>
 
-                {review.issues && review.issues.length > 0 && (
-                    <div className="mt-6 pt-2 border-t border-neutral-900">
-                        <div className="grid gap-3">
-                            {review.issues.map((issue: IssueWithMetadata, i: number) => (
-                                <div key={i} className="p-4 flex gap-2 min-w-0">
-                                    <div className="shrink-0 flex items-center justify-center w-6 h-6 rounded bg-neutral-900 border border-neutral-800 text-[10px] font-mono text-neutral-500">
-                                        {String(i + 1).padStart(2, '0')}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                                            {issue.commentBody}
-                                        </ReactMarkdown>
-                                        {(issue.diff.oldCode || issue.diff.newCode) && (
-                                            <div className="mt-3 p-3 rounded bg-neutral-900/50 border border-neutral-800 overflow-x-auto max-w-full">
-                                                <div className="text-[10px] font-mono text-neutral-500 uppercase tracking-widest mb-2 sticky left-0">
-                                                    Diff
-                                                </div>
-                                                <div className="font-mono text-xs whitespace-pre-wrap break-words">
-                                                    {issue.diff.oldCode && issue.diff.oldCode !== 'N/A' && (
-                                                        <div className="text-red-400 mb-1 flex gap-2">
-                                                            <span className="text-neutral-500 shrink-0">-</span>
-                                                            <span className="break-all">{issue.diff.oldCode}</span>
-                                                        </div>
-                                                    )}
-                                                    {issue.diff.newCode && issue.diff.newCode !== 'N/A' && (
-                                                        <div className="text-green-400 flex gap-2">
-                                                            <span className="text-neutral-500 shrink-0">+</span>
-                                                            <span className="break-all">{issue.diff.newCode}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                <div className="mt-12 pt-6 border-t border-neutral-900 flex justify-between items-center">
-                    <Link
-                        href={`/review-history/${review.id}`}
-                        className="flex items-center gap-2 text-[11px] font-mono text-neutral-500 hover:text-white transition-colors uppercase tracking-widest"
-                    >
-                        View Details <ArrowRight size={12} />
-                    </Link>
-                    <a
-                        href={review.prUrl}
-                        target="_blank"
-                        className="flex items-center gap-2 text-[11px] font-mono text-neutral-500 hover:text-white transition-colors uppercase tracking-widest"
-                    >
-                        Source Context <ExternalLink size={12} />
-                    </a>
-                </div>
+            <div className="flex justify-between items-center">
+                <Link
+                    href={`/review-history/${review.id}`}
+                    className="flex items-center gap-2 text-[11px] font-mono text-neutral-500 hover:text-white transition-colors uppercase tracking-widest"
+                >
+                    View Details <ArrowRight size={12} />
+                </Link>
+                <a
+                    href={review.prUrl}
+                    target="_blank"
+                    className="flex items-center gap-2 text-[11px] font-mono text-neutral-500 hover:text-white transition-colors uppercase tracking-widest"
+                >
+                    Source Context <ExternalLink size={12} />
+                </a>
             </div>
+        </div>
         </section>
     );
 };
