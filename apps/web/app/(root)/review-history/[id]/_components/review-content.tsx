@@ -13,8 +13,8 @@ export const ReviewContent = ({ id }: Props) => {
 
     return (
         <div className="min-h-screen bg-[#121212] text-neutral-300 selection:bg-orange-500/30">
-            <div className="max-w-4xl mx-auto px-6 py-16">
-                <header className="mb-16">
+            <div className="mx-auto px-6 py-6">
+                <header className="mb-6">
                     <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-neutral-800 bg-neutral-900/50 mb-6">
                         <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
                         <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
@@ -27,7 +27,7 @@ export const ReviewContent = ({ id }: Props) => {
                     </p>
                 </header>
 
-                <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6">
+                <div className="bg-neutral-900/50 border border-neutral-800 p-6">
                     <ReviewTimeline reviewId={id} />
                 </div>
             </div>

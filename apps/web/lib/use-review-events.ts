@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { authClient } from './auth-client';
 import { fetchReviewEvents, type ReviewEventItem } from './review';
 
 export interface ReviewEvent {
@@ -73,14 +74,20 @@ export function useReviewEvents({
         loadSavedEvents();
     }, [fetchSavedEvents, reviewId, onEvent]);
 
-    const connect = useCallback(() => {
+    const connect = useCallback(async () => {
         if (!reviewId) return;
 
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
         }
 
-        const eventSource = new EventSource(`${STREAMING_URL}/stream/${reviewId}`);
+        const { data: session } = await authClient.getSession();
+        const token = session?.session?.token;
+        const url = token
+            ? `${STREAMING_URL}/stream/${reviewId}?token=${encodeURIComponent(token)}`
+            : `${STREAMING_URL}/stream/${reviewId}`;
+
+        const eventSource = new EventSource(url);
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
