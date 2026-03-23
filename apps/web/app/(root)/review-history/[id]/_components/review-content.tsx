@@ -27,7 +27,7 @@ export const ReviewContent = ({ id }: Props) => {
                     </p>
                 </header>
 
-                <div className="bg-neutral-900/50 border border-neutral-800 p-6">
+                <div className="">
                     <ReviewTimeline reviewId={id} />
                 </div>
             </div>
