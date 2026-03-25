@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { generateEmbedding } from '@repo/ai';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
-import { addJob, createQueue, createWorker } from '@repo/queue';
+import { addJob, createEventPublisher, createQueue, createWorker } from '@repo/queue';
 import { Octokit } from 'octokit';
 import { indexCodebase } from './lib/embedding.js';
 import { type FileContent, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
@@ -23,6 +23,7 @@ interface PRContextMessage {
     commitSha: string;
     installationId: string;
     checkRunId?: number;
+    reviewId?: string;
 }
 
 const repoIndexQueue = createQueue(QUEUE_NAME);
@@ -31,6 +32,8 @@ const aiReviewQueue = createQueue(AI_REVIEW_QUEUE);
 
 let repoIndexWorker: ReturnType<typeof createWorker>;
 let contextWorker: ReturnType<typeof createWorker>;
+
+const eventPublisher = createEventPublisher();
 
 async function getAccessToken(userId: string): Promise<string | null> {
     try {
@@ -78,13 +81,36 @@ async function startContextWorker(): Promise<void> {
         const contextMessage = job.data as PRContextMessage;
         logger.info({ contextMessage }, 'Received pr-context event');
 
-        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha, installationId, checkRunId } =
+        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha, installationId, checkRunId, reviewId } =
             contextMessage;
         logger.info({ query, repoId }, 'Retrieving context for PR');
 
         try {
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'CONTEXT_RETRIEVAL_STARTED',
+                    CONTEXT_QUEUE,
+                    'Context Retrieval',
+                    'pending',
+                    'Starting context retrieval from vector store',
+                );
+            }
+
             const context = await retrieveContext(query, repoId);
             logger.info({ repoId, prNumber, contextLength: context.length }, 'Retrieved context for PR');
+
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'CONTEXT_RETRIEVED',
+                    CONTEXT_QUEUE,
+                    'Context Retrieval',
+                    'success',
+                    `Retrieved ${context.length} context entries`,
+                    { contextLength: context.length },
+                );
+            }
 
             await addJob(aiReviewQueue, 'pr-ai-review', {
                 title: query.split('\n')[0],
@@ -99,10 +125,22 @@ async function startContextWorker(): Promise<void> {
                 commitSha,
                 installationId,
                 checkRunId,
+                reviewId,
             });
             logger.info({ repoId, prNumber, checkRunId }, 'Sent AI review message to queue');
         } catch (error) {
             logger.error({ error, repoId, prNumber }, 'Failed to retrieve context');
+
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'CONTEXT_RETRIEVAL_STARTED',
+                    CONTEXT_QUEUE,
+                    'Context Retrieval',
+                    'error',
+                    `Failed to retrieve context: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                );
+            }
         }
     });
 
@@ -162,6 +200,7 @@ process.on('SIGTERM', async () => {
     await repoIndexQueue.close();
     await contextQueue.close();
     await aiReviewQueue.close();
+    await eventPublisher.close();
     process.exit(0);
 });
 
@@ -172,5 +211,6 @@ process.on('SIGINT', async () => {
     await repoIndexQueue.close();
     await contextQueue.close();
     await aiReviewQueue.close();
+    await eventPublisher.close();
     process.exit(0);
 });

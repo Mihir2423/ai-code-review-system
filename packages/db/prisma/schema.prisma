@@ -129,8 +129,25 @@ model Review {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  events                ReviewEvent[]
 
   @@unique([repositoryId, prNumber])
   @@index([repositoryId])
   @@map("review")
+}
+
+model ReviewEvent {
+  id        String   @id @default(cuid())
+  reviewId  String
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  type      String
+  queueName String?
+  stage     String?
+  status    String
+  message   String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([reviewId])
+  @@map("review_event")
 }

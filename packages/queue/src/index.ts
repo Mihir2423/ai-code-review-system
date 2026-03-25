@@ -1,5 +1,4 @@
-import { type ConnectionOptions } from 'bullmq';
-import { type JobsOptions, type Processor, Queue, Worker } from 'bullmq';
+import { type ConnectionOptions, type JobsOptions, type Processor, Queue, Worker } from 'bullmq';
 
 const createConnection = (): ConnectionOptions => {
     const REDIS_URL = process.env.REDIS_URL;
@@ -55,3 +54,5 @@ export const closeWorker = async (worker: Worker) => {
 };
 
 export { Queue, Worker };
+
+export * from './events.js';

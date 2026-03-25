@@ -4,7 +4,7 @@ import { createAppAuth } from '@octokit/auth-app';
 import { generateCodeReview, type ReviewIssue } from '@repo/ai';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
-import { addJob, createQueue, createWorker } from '@repo/queue';
+import { addJob, createEventPublisher, createQueue, createWorker } from '@repo/queue';
 import type { IssueWithMetadata } from '@repo/types';
 import { Octokit } from 'octokit';
 
@@ -25,12 +25,14 @@ interface AIReviewMessage {
     installationId: string;
     commitSha: string;
     checkRunId?: number;
+    reviewId?: string;
 }
 
 const aiReviewQueue = createQueue(QUEUE_NAME);
 const issuesQueue = createQueue(ISSUES_QUEUE);
 
 let aiReviewWorker: ReturnType<typeof createWorker>;
+const eventPublisher = createEventPublisher();
 
 async function getBotOctokit(installationId: string): Promise<Octokit> {
     const auth = createAppAuth({
@@ -216,6 +218,7 @@ async function startWorker(): Promise<void> {
             installationId,
             commitSha,
             checkRunId,
+            reviewId,
         } = reviewMessage;
 
         if (!installationId) {
@@ -231,9 +234,33 @@ async function startWorker(): Promise<void> {
             return;
         }
 
+        if (reviewId) {
+            await eventPublisher.publishStage(
+                reviewId,
+                'AI_REVIEW_STARTED',
+                QUEUE_NAME,
+                'AI Review',
+                'pending',
+                'Starting AI code review analysis',
+                { contextLength: context.length },
+            );
+        }
+
         try {
             logger.info({ repoId, prNumber }, 'Generating code review...');
             const review = await generateCodeReview(title, description, context, diff);
+
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'AI_REVIEW_COMPLETED',
+                    QUEUE_NAME,
+                    'AI Review',
+                    'success',
+                    'AI analysis complete',
+                    { totalIssues: review.issues.length },
+                );
+            }
 
             const uniqueIssues = deduplicateIssues(review.issues);
 
@@ -296,6 +323,7 @@ async function startWorker(): Promise<void> {
                 commitSha,
                 issues: issuesWithLines,
                 summary: summaryMessage,
+                reviewId,
             });
             logger.info({ repoId, prNumber, issuesCount: issuesWithLines.length }, 'Sent issues and summary to queue');
 
@@ -337,28 +365,44 @@ async function startWorker(): Promise<void> {
                 }));
             }
 
-            await prisma.review.upsert({
-                where: {
-                    repositoryId_prNumber: {
+            const existingReview = await prisma.review.findFirst({
+                where: { repositoryId: repoId, prNumber },
+            });
+
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'ISSUES_POSTED',
+                    QUEUE_NAME,
+                    'Post Issues',
+                    'success',
+                    `Queued ${issuesWithLines.length} issues for posting`,
+                    { issuesCount: issuesWithLines.length },
+                );
+            }
+
+            if (existingReview) {
+                await prisma.review.update({
+                    where: { id: existingReview.id },
+                    data: {
+                        status: 'completed',
+                        review: summaryMessage,
+                        issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
+                    },
+                });
+            } else {
+                await prisma.review.create({
+                    data: {
                         repositoryId: repoId,
                         prNumber,
+                        prTitle: title,
+                        prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+                        status: 'completed',
+                        review: summaryMessage,
+                        issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
                     },
-                },
-                create: {
-                    repositoryId: repoId,
-                    prNumber,
-                    prTitle: title,
-                    prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-                    status: 'completed',
-                    review: summaryMessage,
-                    issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
-                },
-                update: {
-                    status: 'completed',
-                    review: summaryMessage,
-                    issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
-                },
-            });
+                });
+            }
             logger.info({ repoId, prNumber }, 'Updated review status to completed');
 
             if (checkRunId) {
@@ -375,9 +419,32 @@ async function startWorker(): Promise<void> {
                         uniqueIssues,
                         octokit,
                     );
+
+                    if (reviewId) {
+                        await eventPublisher.publishStage(
+                            reviewId,
+                            'CHECK_RUN_UPDATED',
+                            QUEUE_NAME,
+                            'Update Check Run',
+                            'success',
+                            'GitHub check run updated with results',
+                        );
+                    }
                 } catch (error) {
                     logger.error({ error, checkRunId }, 'Failed to update check run');
                 }
+            }
+
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'REVIEW_COMPLETED',
+                    QUEUE_NAME,
+                    'Review Complete',
+                    'success',
+                    'PR review completed successfully',
+                    { totalIssues: uniqueIssues.length },
+                );
             }
         } catch (error) {
             logger.error(
@@ -385,30 +452,32 @@ async function startWorker(): Promise<void> {
                 'Failed to generate/post review',
             );
 
-            await prisma.review
-                .upsert({
-                    where: {
-                        repositoryId_prNumber: {
+            const existingReview = await prisma.review.findFirst({
+                where: { repositoryId: repoId, prNumber },
+            });
+
+            if (existingReview) {
+                await prisma.review.update({
+                    where: { id: existingReview.id },
+                    data: { status: 'failed' },
+                });
+            } else {
+                await prisma.review
+                    .create({
+                        data: {
                             repositoryId: repoId,
                             prNumber,
+                            prTitle: title,
+                            prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+                            status: 'failed',
+                            review: '',
+                            issues: [],
                         },
-                    },
-                    create: {
-                        repositoryId: repoId,
-                        prNumber,
-                        prTitle: title,
-                        prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-                        status: 'failed',
-                        review: '',
-                        issues: [],
-                    },
-                    update: {
-                        status: 'failed',
-                    },
-                })
-                .catch((err: unknown) => {
-                    logger.error({ err, repoId, prNumber }, 'Failed to update review status to failed');
-                });
+                    })
+                    .catch((err: unknown) => {
+                        logger.error({ err, repoId, prNumber }, 'Failed to create review record');
+                    });
+            }
 
             if (checkRunId) {
                 try {
@@ -424,6 +493,17 @@ async function startWorker(): Promise<void> {
                 } catch (updateError) {
                     logger.error({ error: updateError, checkRunId }, 'Failed to update check run to failure');
                 }
+            }
+
+            if (reviewId) {
+                await eventPublisher.publishStage(
+                    reviewId,
+                    'REVIEW_FAILED',
+                    QUEUE_NAME,
+                    'Review Complete',
+                    'error',
+                    `Review failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                );
             }
         }
     });
@@ -458,6 +538,7 @@ process.on('SIGTERM', async () => {
     await aiReviewWorker?.close();
     await aiReviewQueue.close();
     await issuesQueue.close();
+    await eventPublisher.close();
     process.exit(0);
 });
 
@@ -466,5 +547,6 @@ process.on('SIGINT', async () => {
     await aiReviewWorker?.close();
     await aiReviewQueue.close();
     await issuesQueue.close();
+    await eventPublisher.close();
     process.exit(0);
 });

@@ -10,7 +10,7 @@ export default function RootLayout({
         <div className="flex h-screen w-full overflow-hidden">
             <Sidebar />
 
-            <div className="flex flex-col flex-1 min-w-0 h-dvh" style={{ background: '#0a0a0c' }}>
+            <div className="flex flex-col flex-1 min-w-0 h-dvh bg-neutral-50">
                 <Navbar />
                 <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
             </div>

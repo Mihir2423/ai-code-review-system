@@ -15,10 +15,10 @@ function transformGitHubStatsToStats(githubStats: {
             value: githubStats.repos.total,
             change: `+${githubStats.repos.thisMonth} this month`,
             status: 'Active',
-            statusColor: '#4ade80',
+            statusColor: '#16a34a',
             tag: 'VCS',
             tagIcon: '◈',
-            tagColor: '#38bdf8',
+            tagColor: '#0284c7',
             accentColor: '#f97316',
             trend: githubStats.repos.trend.map((t) => t.count),
         },
@@ -28,11 +28,11 @@ function transformGitHubStatsToStats(githubStats: {
             value: githubStats.commits.total,
             change: `+${githubStats.commits.thisWeek} this week`,
             status: 'Live',
-            statusColor: '#818cf8',
+            statusColor: '#6366f1',
             tag: 'Activity',
             tagIcon: '◈',
-            tagColor: '#f472b6',
-            accentColor: '#38bdf8',
+            tagColor: '#db2777',
+            accentColor: '#0284c7',
             trend: githubStats.commits.trend.map((t) => t.count),
         },
     ];
@@ -47,20 +47,20 @@ export default function DashboardPage() {
     const stats = data ? transformGitHubStatsToStats(data?.content) : [];
 
     return (
-        <div className="min-h-screen bg-neutral-950 p-0 text-neutral-300">
+        <div className="min-h-screen bg-neutral-50 p-0 text-neutral-700">
             <div className="px-7 py-8">
                 <div className={`mb-7 transition-all duration-500 ease-out opacity-100 translate-y-0`}>
-                    <h1 className="mb-1.5 text-[22px] font-semibold tracking-wide text-neutral-200">
+                    <h1 className="mb-1.5 text-[22px] font-semibold tracking-wide text-neutral-900">
                         Dashboard Overview
                     </h1>
-                    <p className="font-mono text-xs text-neutral-500">
+                    <p className="font-mono text-xs text-neutral-400">
                         Tracking your codebase activity across all connected sources.
                     </p>
                 </div>
 
                 {error ? (
                     <div className="flex items-center justify-center p-8">
-                        <div className="text-red-400 font-mono text-sm">Failed to load stats: {error.message}</div>
+                        <div className="text-red-500 font-mono text-sm">Failed to load stats: {error.message}</div>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -71,7 +71,7 @@ export default function DashboardPage() {
                 )}
 
                 <div
-                    className={`mt-5 flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-[18px] py-3.5 transition-all duration-700 ease-out opacity-100`}
+                    className={`mt-5 flex items-center justify-between rounded-md border border-neutral-200 bg-white px-[18px] py-3.5 transition-all duration-700 ease-out opacity-100`}
                 >
                     <div className="flex gap-6">
                         {[
@@ -81,12 +81,12 @@ export default function DashboardPage() {
                             { label: 'Pending reviews', value: '3' },
                         ].map(({ label, value }) => (
                             <div key={label}>
-                                <div className="mb-0.5 font-mono text-[10px] text-neutral-600">{label}</div>
-                                <div className="font-mono text-[13px] text-neutral-400">{value}</div>
+                                <div className="mb-0.5 font-mono text-[10px] text-neutral-400">{label}</div>
+                                <div className="font-mono text-[13px] text-neutral-600">{value}</div>
                             </div>
                         ))}
                     </div>
-                    <div className="text-right font-mono text-[10px] text-neutral-600">
+                    <div className="text-right font-mono text-[10px] text-neutral-400">
                         <div>MF-DASH · v2.4.1</div>
                         <div className="mt-0.5 text-neutral-500">Auto-refresh enabled</div>
                     </div>

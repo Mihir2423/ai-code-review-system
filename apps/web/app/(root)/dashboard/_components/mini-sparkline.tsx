@@ -18,11 +18,9 @@ export function MiniSparkline({ data, color }: MiniSparklineProps) {
             return `${x},${y}`;
         })
         .join(' ');
-
     const last = data[data.length - 1];
     const x = w;
     const y = h - ((last - min) / range) * h;
-
     return (
         <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
             <defs>

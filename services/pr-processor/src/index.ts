@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createAppAuth } from '@octokit/auth-app';
 import prisma from '@repo/db';
 import { logger } from '@repo/logger';
-import { addJob, createQueue, createWorker } from '@repo/queue';
+import { addJob, createEventPublisher, createQueue, createWorker } from '@repo/queue';
 import { Octokit } from 'octokit';
 
 const QUEUE_NAME = 'pr-review';
@@ -16,6 +16,7 @@ interface PRReviewMessage {
     prNumber: number;
     userId: string;
     installationId: string;
+    reviewId?: string;
 }
 
 interface PRDetails {
@@ -61,6 +62,8 @@ const contextQueue = createQueue(CONTEXT_QUEUE);
 let prReviewWorker: ReturnType<typeof createWorker>;
 let commentWorker: ReturnType<typeof createWorker>;
 let issuesWorker: ReturnType<typeof createWorker>;
+
+const eventPublisher = createEventPublisher();
 
 const CHECK_NAME = 'AI Code Review';
 
@@ -204,18 +207,12 @@ async function startPrReviewWorker(): Promise<void> {
         }
 
         try {
-            const prData = await reviewPullRequest(owner, repo, prNumber, octokit);
-
-            const query = `${prData.prTitle}\n${prData.prBody}`;
-
             const repository = await prisma.repository.findFirst({
                 where: { owner, name: repo, userId },
             });
 
-            const checkRunId = await createCheckRun(owner, repo, prData.commitSha, octokit);
-
             if (repository) {
-                await prisma.review.upsert({
+                const review = await prisma.review.upsert({
                     where: {
                         repositoryId_prNumber: {
                             repositoryId: repository.id,
@@ -225,8 +222,8 @@ async function startPrReviewWorker(): Promise<void> {
                     create: {
                         repositoryId: repository.id,
                         prNumber,
-                        prTitle: prData.prTitle,
-                        prUrl: prData.prUrl,
+                        prTitle: `PR #${prNumber}`,
+                        prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
                         review: '',
                         issues: [],
                         status: 'pending',
@@ -235,6 +232,50 @@ async function startPrReviewWorker(): Promise<void> {
                         status: 'pending',
                     },
                 });
+
+                await eventPublisher.publishStage(
+                    review.id,
+                    'REVIEW_STARTED',
+                    QUEUE_NAME,
+                    'PR Review',
+                    'success',
+                    `Started reviewing PR #${prNumber}`,
+                    { owner, repo },
+                );
+
+                const prData = await reviewPullRequest(owner, repo, prNumber, octokit);
+
+                await prisma.review.update({
+                    where: { id: review.id },
+                    data: {
+                        prTitle: prData.prTitle,
+                        prUrl: prData.prUrl,
+                    },
+                });
+
+                await eventPublisher.publishStage(
+                    review.id,
+                    'PR_DETAILS_FETCHED',
+                    QUEUE_NAME,
+                    'Fetch PR Details',
+                    'success',
+                    `Fetched PR details: ${prData.prTitle}`,
+                    { prTitle: prData.prTitle, commitSha: prData.commitSha },
+                );
+
+                const checkRunId = await createCheckRun(owner, repo, prData.commitSha, octokit);
+
+                await eventPublisher.publishStage(
+                    review.id,
+                    'CHECK_RUN_CREATED',
+                    QUEUE_NAME,
+                    'Create Check Run',
+                    'success',
+                    `Created GitHub check run`,
+                    { checkRunId },
+                );
+
+                const query = `${prData.prTitle}\n${prData.prBody}`;
 
                 await addJob(
                     contextQueue,
@@ -250,24 +291,32 @@ async function startPrReviewWorker(): Promise<void> {
                         diff: prData.diff,
                         commitSha: prData.commitSha,
                         checkRunId,
+                        reviewId: review.id,
                     },
                     {
                         jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}`,
                     },
                 );
 
-                logger.info({ repoId: repository.id, prNumber, checkRunId }, 'Sent context retrieval message to queue');
-            }
+                await eventPublisher.publishStage(
+                    review.id,
+                    'CONTEXT_RETRIEVAL_STARTED',
+                    QUEUE_NAME,
+                    'Queue Context Retrieval',
+                    'success',
+                    'Queued for context retrieval',
+                    { queueName: CONTEXT_QUEUE },
+                );
 
-            await addJob(
-                commentQueue,
-                'pr-comment',
-                {
-                    owner,
-                    repo,
-                    prNumber,
-                    installationId,
-                    comment: `> [!NOTE]
+                await addJob(
+                    commentQueue,
+                    'pr-comment',
+                    {
+                        owner,
+                        repo,
+                        prNumber,
+                        installationId,
+                        comment: `> [!NOTE]
 > Currently processing new changes in this PR. This may take a few minutes, please wait...
 >
 > \`\`\`ascii
@@ -279,13 +328,23 @@ async function startPrReviewWorker(): Promise<void> {
 >         (•ㅅ•)
 >         /　 づ
 > \`\`\``,
-                },
-                {
-                    jobId: `pr-comment-${owner}-${repo}-${prNumber}-${installationId}`,
-                },
-            );
+                    },
+                    {
+                        jobId: `pr-comment-${owner}-${repo}-${prNumber}-${installationId}`,
+                    },
+                );
 
-            logger.info({ owner, repo, prNumber }, 'Sent initial comment message to queue');
+                await eventPublisher.publishStage(
+                    review.id,
+                    'COMMENT_POSTED',
+                    QUEUE_NAME,
+                    'Post Initial Comment',
+                    'success',
+                    'Posted initial processing comment to PR',
+                );
+
+                logger.info({ owner, repo, prNumber }, 'Sent initial comment message to queue');
+            }
         } catch (error) {
             logger.error({ error, owner, repo, prNumber }, 'Failed to review pull request');
 
@@ -294,7 +353,7 @@ async function startPrReviewWorker(): Promise<void> {
             });
 
             if (repository) {
-                await prisma.review.upsert({
+                const review = await prisma.review.upsert({
                     where: {
                         repositoryId_prNumber: {
                             repositoryId: repository.id,
@@ -313,6 +372,16 @@ async function startPrReviewWorker(): Promise<void> {
                         status: 'failed',
                     },
                 });
+
+                await eventPublisher.publishStage(
+                    review.id,
+                    'REVIEW_FAILED',
+                    QUEUE_NAME,
+                    'PR Review',
+                    'error',
+                    `Review failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    { error: String(error) },
+                );
             }
         }
     });
@@ -429,6 +498,7 @@ process.on('SIGTERM', async () => {
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();
+    await eventPublisher.close();
     process.exit(0);
 });
 
@@ -440,5 +510,6 @@ process.on('SIGINT', async () => {
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();
+    await eventPublisher.close();
     process.exit(0);
 });

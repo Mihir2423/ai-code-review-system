@@ -156,6 +156,9 @@ importers:
       react-syntax-highlighter:
         specifier: ^16.1.1
         version: 16.1.1(react@19.2.3)
+      react-use-measure:
+        specifier: ^2.1.7
+        version: 2.1.7(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
@@ -480,6 +483,43 @@ importers:
         version: 2.0.0(@types/node@25.4.0)(typescript@5.9.3)
       tsx:
         specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  services/streaming-service:
+    dependencies:
+      '@repo/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@repo/redis':
+        specifier: workspace:*
+        version: link:../../packages/redis
+      better-auth:
+        specifier: ^1.4.3
+        version: 1.5.4(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.15)(@opentelemetry/api@1.9.0)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.18.0)(kysely@0.28.11)(mysql2@3.15.3)(pg@8.20.0)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)))(mongodb@7.1.0)(mysql2@3.15.3)(next@16.1.6(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(pg@8.20.0)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      cors:
+        specifier: ^2.8.6
+        version: 2.8.6
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.3.1
+      express:
+        specifier: ^5.0.1
+        version: 5.2.1
+    devDependencies:
+      '@types/cors':
+        specifier: ^2.8.19
+        version: 2.8.19
+      '@types/express':
+        specifier: ^5.0.0
+        version: 5.0.6
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      tsx:
+        specifier: ^4.19.0
         version: 4.21.0
       typescript:
         specifier: ^5.9.3
@@ -7608,7 +7648,7 @@ snapshots:
 
   '@types/cors@2.8.19':
     dependencies:
-      '@types/node': 20.19.37
+      '@types/node': 25.5.0
 
   '@types/d3-array@3.2.2': {}
 

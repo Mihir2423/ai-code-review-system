@@ -38,23 +38,19 @@ export function StatCard({ stat, index }: StatCardProps) {
 
     return (
         <div
-            className={`relative overflow-hidden flex flex-col gap-3.5 justify-between rounded-md border border-neutral-800 bg-neutral-900 p-5 transition-all duration-500 ease-out ${
+            className={`relative overflow-hidden flex flex-col gap-3.5 justify-between rounded-md border border-neutral-200 bg-white p-5 transition-all duration-500 ease-out ${
                 visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
             }`}
             style={{ minWidth: 0 }}
         >
-            <div
-                className="absolute left-0 right-0 top-0 h-0.5"
-                style={{ background: `linear-gradient(90deg, ${stat.accentColor}88, transparent)` }}
-            />
             <div className="flex flex-col gap-3.5">
                 <div className="flex justify-between items-start">
                     <div className="flex flex-col gap-1">
-                        <span className="font-mono text-[10px] text-neutral-500 tracking-wider">{stat.id}</span>
-                        <span className="font-mono text-xs text-neutral-400 tracking-wide">{stat.label}</span>
+                        <span className="font-mono text-[10px] text-neutral-400 tracking-wider">{stat.id}</span>
+                        <span className="font-mono text-xs text-neutral-500 tracking-wide">{stat.label}</span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 rounded border border-neutral-700 bg-neutral-800 px-2 py-1">
+                    <div className="flex items-center gap-1.5 rounded border border-neutral-200 bg-neutral-50 px-2 py-1">
                         <div
                             className="h-1.5 w-1.5 rounded-full"
                             style={{
@@ -70,7 +66,7 @@ export function StatCard({ stat, index }: StatCardProps) {
 
                 <div className="flex justify-between items-end">
                     <div>
-                        <div className="font-mono text-[38px] font-bold leading-none tracking-wide text-neutral-200">
+                        <div className="font-mono text-[38px] font-bold leading-none tracking-wide text-neutral-900">
                             {count.toLocaleString()}
                         </div>
                         <div className="mt-1.5 font-mono text-[11px]" style={{ color: stat.accentColor }}>
@@ -83,12 +79,12 @@ export function StatCard({ stat, index }: StatCardProps) {
                 {connectedPct !== null && (
                     <div>
                         <div className="mb-1.5 flex justify-between">
-                            <span className="font-mono text-[10px] text-neutral-500">coverage</span>
+                            <span className="font-mono text-[10px] text-neutral-400">coverage</span>
                             <span className="font-mono text-[10px]" style={{ color: stat.accentColor }}>
                                 {connectedPct}%
                             </span>
                         </div>
-                        <div className="h-0.5 overflow-hidden rounded bg-neutral-800">
+                        <div className="h-0.5 overflow-hidden rounded bg-neutral-200">
                             <div
                                 className="h-full rounded transition-all duration-1000 ease-out"
                                 style={{
@@ -101,14 +97,14 @@ export function StatCard({ stat, index }: StatCardProps) {
                 )}
             </div>
 
-            <div className="flex items-center justify-between border-t border-neutral-800 pt-2">
+            <div className="flex items-center justify-between border-t border-neutral-200 pt-2">
                 <div className="flex items-center gap-1.5">
                     <span style={{ color: stat.tagColor }} className="text-[11px]">
                         {stat.tagIcon}
                     </span>
-                    <span className="font-mono text-[10px] text-neutral-500 tracking-wider">{stat.tag}</span>
+                    <span className="font-mono text-[10px] text-neutral-400 tracking-wider">{stat.tag}</span>
                 </div>
-                <span className="font-mono text-[10px] text-neutral-600">Updated just now</span>
+                <span className="font-mono text-[10px] text-neutral-400">Updated just now</span>
             </div>
         </div>
     );
