@@ -79,3 +79,30 @@ export async function getReviewEvents(reviewId: string, userId: string): Promise
 
     return events;
 }
+
+export async function getReviewById(reviewId: string, userId: string): Promise<ReviewHistoryItem | null> {
+    const review = await prisma.review.findUnique({
+        where: { id: reviewId },
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    owner: true,
+                    fullName: true,
+                    userId: true,
+                },
+            },
+        },
+    });
+
+    if (!review || review.user.userId !== userId) {
+        return null;
+    }
+
+    const { userId: _, ...userWithoutUserId } = review.user;
+    return {
+        ...review,
+        repository: userWithoutUserId,
+    };
+}

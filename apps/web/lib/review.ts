@@ -117,6 +117,53 @@ export async function fetchReviewEvents(reviewId: string): Promise<ReviewEventIt
     return result.content;
 }
 
+export async function fetchReviewById(reviewId: string): Promise<ReviewHistoryItem> {
+    const { data: session } = await authClient.getSession();
+
+    if (!session) {
+        throw new Error('No session found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/review/${reviewId}`, {
+        headers: {
+            Authorization: `Bearer ${session.session?.token}`,
+        },
+        credentials: 'include',
+    });
+    if (response.status === 404) {
+        throw new Error('Review not found');
+    }
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to fetch review');
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+        throw new Error(result.message || 'Failed to fetch review');
+    }
+
+    const item = result.content as ReviewHistoryItem & { issues: string[] };
+    return {
+        ...item,
+        issues: item.issues.map((issueStr: string) => {
+            try {
+                return JSON.parse(issueStr) as IssueWithMetadata;
+            } catch {
+                return {
+                    file: '',
+                    line: 0,
+                    severity: 'warning',
+                    description: issueStr,
+                    commentBody: issueStr,
+                    diff: { oldCode: '', newCode: '' },
+                } as IssueWithMetadata;
+            }
+        }),
+    };
+}
+
 export function useReviewHistory() {
     return useQuery({
         queryKey: ['review-history'],

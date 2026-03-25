@@ -18,7 +18,7 @@ const ReviewHistoryPage = () => {
 
     const [popoverView, setPopoverView] = useState<'main' | 'repos' | 'status'>('main');
     const [direction, setDirection] = useState(0);
-    const [sortBy, setSortBy] = useState<'name' | null>('name');
+    const [sortBy, setSortBy] = useState<'name' | null>();
 
     const [contentRef, { height }] = useMeasure();
 

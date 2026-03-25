@@ -55,12 +55,14 @@ function DetailModal({ event, onClose }: { event: ReviewEvent; onClose: () => vo
                         <div className={`w-2 h-2 rounded-full ${statusDot[event.status]}`} />
                         <h3 className="text-sm font-medium text-white tracking-tight">{event.stage}</h3>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="text-neutral-600 hover:text-neutral-300 transition-colors"
-                    >
+                    <button onClick={onClose} className="text-neutral-600 hover:text-neutral-300 transition-colors">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M6 18L18 6M6 6l12 12"
+                            />
                         </svg>
                     </button>
                 </div>
@@ -81,12 +83,16 @@ function DetailModal({ event, onClose }: { event: ReviewEvent; onClose: () => vo
                     {event.timestamp && (
                         <div className="grid grid-cols-[80px_1fr] gap-2 items-start">
                             <span className="text-[10px] text-neutral-600 uppercase tracking-widest pt-0.5">Time</span>
-                            <span className="text-xs text-neutral-300 font-mono">{formatTimestamp(event.timestamp)}</span>
+                            <span className="text-xs text-neutral-300 font-mono">
+                                {formatTimestamp(event.timestamp)}
+                            </span>
                         </div>
                     )}
                     {event.details && Object.keys(event.details).length > 0 && (
                         <div className="pt-1">
-                            <span className="text-[10px] text-neutral-600 uppercase tracking-widest block mb-1.5">Details</span>
+                            <span className="text-[10px] text-neutral-600 uppercase tracking-widest block mb-1.5">
+                                Details
+                            </span>
                             <pre className="text-[11px] font-mono text-neutral-400 p-3 bg-[#0a0a0a] rounded-lg border border-[#1e1e1e] overflow-x-auto leading-relaxed">
                                 {JSON.stringify(event.details, null, 2)}
                             </pre>
@@ -97,7 +103,6 @@ function DetailModal({ event, onClose }: { event: ReviewEvent; onClose: () => vo
         </div>
     );
 }
-
 
 type Status = 'success' | 'pending' | 'error';
 type TimestampedEvent = ReviewEvent & { timestamp: string };
@@ -137,7 +142,10 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
 
     const totalMs = useMemo(() => {
         if (timestamped.length < 2) return 0;
-        return new Date(timestamped[timestamped.length - 1].timestamp).getTime() - new Date(timestamped[0].timestamp).getTime();
+        return (
+            new Date(timestamped[timestamped.length - 1].timestamp).getTime() -
+            new Date(timestamped[0].timestamp).getTime()
+        );
     }, [timestamped]);
 
     if (isLoading) {
@@ -145,7 +153,11 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
             <div className="py-24 flex flex-col items-center justify-center space-y-4">
                 <div className="flex gap-1.5">
                     {[0, 1, 2].map((i) => (
-                        <div key={i} className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.1}s` }} />
+                        <div
+                            key={i}
+                            className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce"
+                            style={{ animationDelay: `${i * 0.1}s` }}
+                        />
                     ))}
                 </div>
                 <span className="text-[10px] font-mono text-neutral-600 uppercase tracking-[0.2em]">Initialising</span>
@@ -155,37 +167,53 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
 
     return (
         <div className="w-full p-8 rounded-xl bg-[#0a0a0a] border border-white/[0.05] shadow-2xl relative overflow-hidden">
-
-            <div className="absolute inset-0 opacity-3 pointer-events-none"
-                 style={{ backgroundImage: `linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)`, width: '40px', height: '40px' }}
+            <div
+                className="absolute inset-0 opacity-3 pointer-events-none"
+                style={{
+                    backgroundImage: `linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)`,
+                    width: '40px',
+                    height: '40px',
+                }}
             />
 
             <div className="relative z-10">
-
                 <div className="flex items-center gap-2 justify-between mb-10 pb-6 border-b border-white/[0.05]">
                     <div className="flex items-center gap-4">
                         <div className="relative flex items-center justify-center">
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-neutral-700'}`} />
-                            {isConnected && <div className="absolute w-2 h-2 rounded-full bg-emerald-500 animate-ping opacity-75" />}
+                            <div
+                                className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+                            />
+                            {isConnected && (
+                                <div className="absolute w-2 h-2 rounded-full bg-emerald-500 animate-ping opacity-75" />
+                            )}
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em] mb-1">Status</span>
-                            <span className="text-xs font-mono text-neutral-200">{isConnected ? 'LIVE_STREAMING' : 'DISCONNECTED'}</span>
+                            <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em] mb-1">
+                                Status
+                            </span>
+                            <span className="text-xs font-mono text-neutral-200">
+                                {isConnected ? 'LIVE_STREAMING' : 'DISCONNECTED'}
+                            </span>
                         </div>
                     </div>
 
                     <div className="flex gap-12">
                         <div className="text-right">
-                            <span className="block text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em] mb-1">Total Time</span>
-                            <span className="text-sm font-mono text-emerald-500 font-medium tracking-tight">{formatMs(totalMs)}</span>
+                            <span className="block text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em] mb-1">
+                                Total Time
+                            </span>
+                            <span className="text-sm font-mono text-emerald-500 font-medium tracking-tight">
+                                {formatMs(totalMs)}
+                            </span>
                         </div>
                         <div className="text-right">
-                            <span className="block text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em] mb-1">Events</span>
+                            <span className="block text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em] mb-1">
+                                Events
+                            </span>
                             <span className="text-sm font-mono text-neutral-200 tracking-tight">{events.length}</span>
                         </div>
                     </div>
                 </div>
-
 
                 {totalMs > 0 && (
                     <div className="flex justify-between text-[10px] text-neutral-600 mb-4 font-mono pl-[200px] pr-[80px] uppercase tracking-widest opacity-50">
@@ -195,9 +223,7 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
                     </div>
                 )}
 
-
                 <div className="relative border-t border-white/3">
-
                     <div className="absolute left-[200px] right-[80px] top-0 bottom-0 flex justify-between pointer-events-none">
                         <div className="w-px bg-white/3 h-full" />
                         <div className="w-px bg-white/3 h-full" />
@@ -213,14 +239,12 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
                                     className="group flex gap-2 items-center py-2 hover:bg-white/2 transition-all cursor-pointer"
                                     onClick={() => setSelectedEvent(event)}
                                 >
-
                                     <div className="w-[200px] shrink-0 flex items-center gap-3 px-4">
                                         <div className={`w-1 h-1 rounded-full ${style.dot}`} />
                                         <span className="text-[11px] font-mono text-neutral-400 group-hover:text-white transition-colors uppercase tracking-wider truncate">
                                             {event.stage}
                                         </span>
                                     </div>
-
 
                                     <div className="grow h-6 relative flex items-center">
                                         <div
@@ -233,7 +257,6 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
                                         />
                                     </div>
 
-
                                     <div className="w-[80px] shrink-0 text-right pr-4">
                                         <span className="text-[10px] font-mono text-neutral-500 group-hover:text-neutral-300">
                                             {formatMs(event.durationMs)}
@@ -245,22 +268,23 @@ export function ReviewTimeline({ reviewId }: { reviewId: string }) {
                     </div>
                 </div>
 
-
                 <div className="mt-12 pt-6 border-t border-white/[0.05] flex items-center justify-between">
                     <div className="flex items-center gap-8">
                         {(['success', 'pending', 'error'] as Status[]).map((status) => (
                             <div key={status} className="flex items-center gap-2">
-                                <div className={`w-1.5 h-1.5 rounded-full ${barStyle[status].dot} ${status === 'pending' ? 'animate-pulse' : ''}`} />
-                                <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em]">{status}</span>
+                                <div
+                                    className={`w-1.5 h-1.5 rounded-full ${barStyle[status].dot} ${status === 'pending' ? 'animate-pulse' : ''}`}
+                                />
+                                <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-[0.2em]">
+                                    {status}
+                                </span>
                             </div>
                         ))}
                     </div>
                 </div>
             </div>
 
-            {selectedEvent && (
-                <DetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
-            )}
+            {selectedEvent && <DetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />}
         </div>
     );
 }
