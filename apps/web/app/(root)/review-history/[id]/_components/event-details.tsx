@@ -43,18 +43,22 @@ export const EventDetails = memo(({ selectedEvent }: EventDetailsProps) => {
                     <span className="text-black text-sm font-medium">Output</span>
                 </div>
             </div>
-            <div className="max-h-100 flex-1 min-h-0 bg-neutral-100 px-4 py-2">
-                {selectedEvent.details ? (
-                    Object.keys(selectedEvent.details).length > 0 && (
-                        <div className="">
-                            <pre className="text-xs text-black overflow-x-auto font-mono">
-                                {JSON.stringify(selectedEvent.details, null, 2)}
-                            </pre>
-                        </div>
-                    )
-                ) : (
-                    <pre className="text-xs text-black overflow-x-auto font-mono">null</pre>
-                )}
+            <div className="max-h-100 flex-1 min-h-0 bg-neutral-100 overflow-auto">
+                <div className="flex font-mono text-xs leading-5 py-4 px-4">
+                    <div className="flex flex-col text-neutral-400 text-right pr-4 select-none border-r border-neutral-300/50 shrink-0 min-w-[2rem]">
+                        {(selectedEvent.details ? JSON.stringify(selectedEvent.details, null, 2) : 'null')
+                            .split('\n')
+                            .map((_, i) => (
+                                <span key={i} className="tabular-nums">
+                                    {i + 1}
+                                </span>
+                            ))}
+                    </div>
+
+                    <pre className="pl-4 text-black overflow-x-auto flex-1">
+                        {selectedEvent.details ? JSON.stringify(selectedEvent.details, null, 2) : 'null'}
+                    </pre>
+                </div>
             </div>
         </div>
     );
