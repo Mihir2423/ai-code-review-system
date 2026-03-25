@@ -106,11 +106,14 @@ const ReviewHistoryPage = () => {
             <div className="px-6 py-6 w-full max-w-7xl mx-auto">
                 <div className="mb-6 w-full flex items-center gap-2">
                     <div className="w-full border border-neutral-200 px-2 py-2 focus-within:bg-neutral-100 transition-colors ease-in-out duration-200 flex items-center gap-2 rounded-md">
-                        <Search size={14} />
+                        <label htmlFor="projects" className="cursor-pointer">
+                            <Search size={14} />
+                        </label>
                         <input
                             className="w-full outline-none placeholder:text-neutral-400 text-xs font-medium border-0 bg-transparent"
                             placeholder="Search Projects..."
                             value={searchQuery}
+                            id="projects"
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>

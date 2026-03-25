@@ -2,11 +2,13 @@
 
 import { Bell, Bookmark, ChevronDown, GitBranch, HelpCircle, LogOut, PanelLeft, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
-import { useUIStore } from '@/lib/store/ui-store';
+import { useSidebar } from '@/components/ui/sidebar';
 
 export function Navbar() {
-    const { dropdownOpen, setDropdownOpen, toggleSidebar } = useUIStore();
+    const { toggleSidebar } = useSidebar();
+    const [dropdownOpen, setDropdownOpen] = useState(false);
     const { data: session } = authClient.useSession();
     const router = useRouter();
     const user = session?.user;
