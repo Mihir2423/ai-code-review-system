@@ -131,6 +131,29 @@ The repo-indexer automatically excludes:
 - **Backoff**: Exponential (60s, 120s, 240s)
 - Failed jobs are marked as `pending` and retried automatically
 
+### Diff-Based Indexing (Production Optimization)
+The system uses intelligent diff-based indexing to avoid full re-indexing:
+
+**Branch Create Event:**
+- If base branch is indexed → mark new branch as indexed (no job)
+- If base branch not indexed → trigger full indexing
+
+**Push Event:**
+- Compare `before` (old commit SHA) vs `after` (new commit SHA)
+- If identical → skip indexing
+- If different → create diff-based job with baseCommitSha + headCommitSha
+
+**Worker Logic:**
+- Uses GitHub Compare API: `GET /repos/{owner}/{repo}/compare/{base}...{head}`
+- Only fetch changed files (added, modified, removed)
+- Skip unchanged files via hash comparison
+- Delete removed files from index
+
+**Edge Cases Handled:**
+- Force push → fallback to full indexing
+- First commit (no base) → fallback to full indexing
+- Large diff (500+ files) → fallback to full indexing
+
 ## What's inside?
 
 ### Apps and Packages

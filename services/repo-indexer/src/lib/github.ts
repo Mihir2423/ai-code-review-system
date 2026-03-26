@@ -182,3 +182,101 @@ export async function fetchRepositoryFiles(
     logger.info({ fileCount: allFiles.length, owner, repo }, 'Fetched all files from repository');
     return allFiles;
 }
+
+export interface ChangedFile {
+    path: string;
+    status: 'added' | 'modified' | 'removed' | 'renamed';
+    content?: string;
+    sha?: string;
+    size?: number;
+}
+
+export async function fetchChangedFiles(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    baseCommitSha: string,
+    headCommitSha: string,
+): Promise<{ changedFiles: ChangedFile[]; isFullIndex: boolean }> {
+    if (!baseCommitSha || !headCommitSha) {
+        logger.info({ owner, repo }, 'No base/head commit SHA, falling back to full indexing');
+        return { changedFiles: [], isFullIndex: true };
+    }
+
+    if (baseCommitSha === headCommitSha) {
+        logger.info({ owner, repo, baseCommitSha, headCommitSha }, 'Commits are identical, no changes');
+        return { changedFiles: [], isFullIndex: false };
+    }
+
+    try {
+        const response = await octokit.rest.repos.compareCommits({
+            owner,
+            repo,
+            base: baseCommitSha,
+            head: headCommitSha,
+        });
+
+        const data = response.data;
+        const files: ChangedFile[] = [];
+
+        if (data.files) {
+            for (const file of data.files) {
+                if (isExcluded(file.filename) || isExcludedExtension(file.filename)) {
+                    logger.info({ path: file.filename, status: file.status }, 'File excluded from indexing');
+                    continue;
+                }
+
+                if (file.status === 'removed') {
+                    files.push({
+                        path: file.filename,
+                        status: 'removed',
+                    });
+                } else if (file.status === 'added' || file.status === 'modified' || file.status === 'renamed') {
+                    let content = '';
+                    if (file.contents_url) {
+                        try {
+                            const contentResponse = await octokit.request(file.contents_url);
+                            if (typeof contentResponse.data === 'string') {
+                                content = contentResponse.data;
+                            } else if (contentResponse.data?.content) {
+                                content = Buffer.from(contentResponse.data.content, 'base64').toString('utf-8');
+                            }
+                        } catch (err) {
+                            logger.error({ error: err, path: file.filename }, 'Failed to fetch file content');
+                        }
+                    }
+
+                    files.push({
+                        path: file.filename,
+                        status: file.status as 'added' | 'modified' | 'renamed',
+                        content,
+                        sha: file.sha ?? '',
+                    });
+                }
+            }
+        }
+
+        const totalChanges = (data.ahead_by ?? 0) + (data.behind_by ?? 0);
+        const isLargeDiff = totalChanges > 500;
+
+        if (isLargeDiff) {
+            logger.warn(
+                { totalChanges, ahead: data.ahead_by, behind: data.behind_by },
+                'Large diff detected, falling back to full indexing',
+            );
+            return { changedFiles: [], isFullIndex: true };
+        }
+
+        logger.info(
+            { changedCount: files.length, baseCommitSha, headCommitSha },
+            'Fetched changed files via compare API',
+        );
+        return { changedFiles: files, isFullIndex: false };
+    } catch (error) {
+        logger.error(
+            { error, owner, repo, baseCommitSha, headCommitSha },
+            'Compare API failed, falling back to full indexing',
+        );
+        return { changedFiles: [], isFullIndex: true };
+    }
+}

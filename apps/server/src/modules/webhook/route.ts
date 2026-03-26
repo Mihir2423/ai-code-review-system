@@ -255,6 +255,174 @@ router.post('/github', async (req, res) => {
         }
     }
 
+    if (event === 'create') {
+        const { ref_type, ref, repository, ref: branchName } = req.body;
+
+        if (ref_type === 'branch') {
+            const fullName = repository?.full_name;
+            const newCommitSha = req.body.commits?.[0]?.id ?? '';
+
+            if (!fullName || !branchName) {
+                logger.warn({ event, ref_type }, 'Missing branch info in create event');
+                return res.sendStatus(200);
+            }
+
+            try {
+                const repositoryRecord = await prisma.repository.findFirst({
+                    where: { fullName },
+                    include: { branches: true },
+                });
+
+                if (!repositoryRecord) {
+                    logger.warn({ fullName }, 'Repository not found in database');
+                    return res.sendStatus(200);
+                }
+
+                const defaultBranch = repositoryRecord.branches.find((b) => b.isDefault);
+
+                const branch = await prisma.repositoryBranch.upsert({
+                    where: {
+                        repositoryId_name: {
+                            repositoryId: repositoryRecord.id,
+                            name: branchName,
+                        },
+                    },
+                    update: { latestCommitSha: newCommitSha },
+                    create: {
+                        repositoryId: repositoryRecord.id,
+                        name: branchName,
+                        latestCommitSha: newCommitSha,
+                        isDefault: false,
+                    },
+                });
+
+                if (defaultBranch && defaultBranch.indexingStatus === 'indexed') {
+                    await prisma.repositoryBranch.update({
+                        where: { id: branch.id },
+                        data: {
+                            indexingStatus: 'indexed',
+                            latestCommitSha: newCommitSha,
+                        },
+                    });
+                    logger.info(
+                        { repo: fullName, branch: branchName },
+                        'Branch marked as indexed (copied from default branch)',
+                    );
+                } else {
+                    const indexingJob = await prisma.repoIndexingJob.create({
+                        data: {
+                            repositoryId: repositoryRecord.id,
+                            branchId: branch.id,
+                            commitSha: newCommitSha,
+                            status: 'pending',
+                        },
+                    });
+
+                    await addJob(repoIndexQueue, 'repo-index', {
+                        repoId: repositoryRecord.id,
+                        branchId: branch.id,
+                        jobId: indexingJob.id,
+                        owner: repositoryRecord.owner,
+                        repo: repositoryRecord.name,
+                        url: repositoryRecord.url,
+                        userId: repositoryRecord.userId,
+                        installationId: repositoryRecord.installationId,
+                        baseCommitSha: defaultBranch?.latestCommitSha ?? '',
+                        headCommitSha: newCommitSha,
+                    });
+
+                    logger.info(
+                        { repo: fullName, branch: branchName, jobId: indexingJob.id },
+                        'Branch indexing job created',
+                    );
+                }
+            } catch (error) {
+                logger.error({ error, fullName, branchName }, 'Error processing branch create event');
+            }
+        }
+    }
+
+    if (event === 'push') {
+        const { repository, ref, before, after, commits } = req.body;
+
+        const fullName = repository?.full_name;
+        const branchName = ref?.replace('refs/heads/', '');
+        const oldCommitSha = before;
+        const newCommitSha = after;
+
+        if (!fullName || !branchName) {
+            logger.warn({ event }, 'Missing repo or branch info in push event');
+            return res.sendStatus(200);
+        }
+
+        if (oldCommitSha === newCommitSha) {
+            logger.info({ repo: fullName, branch: branchName }, 'No new commits, skipping indexing');
+            return res.sendStatus(200);
+        }
+
+        try {
+            const repositoryRecord = await prisma.repository.findFirst({
+                where: { fullName },
+                include: { branches: true },
+            });
+
+            if (!repositoryRecord) {
+                logger.warn({ fullName }, 'Repository not found in database');
+                return res.sendStatus(200);
+            }
+
+            const branch = repositoryRecord.branches.find((b) => b.name === branchName);
+
+            if (!branch) {
+                logger.warn({ fullName, branch: branchName }, 'Branch not found in database, creating new');
+            }
+
+            const branchId = branch?.id ?? '';
+
+            if (branchId) {
+                await prisma.repositoryBranch.update({
+                    where: { id: branchId },
+                    data: { latestCommitSha: newCommitSha },
+                });
+            }
+
+            const createdJob = await prisma.repoIndexingJob.create({
+                data: {
+                    repositoryId: repositoryRecord.id,
+                    branchId: branchId || '',
+                    commitSha: newCommitSha,
+                    status: 'pending',
+                },
+            });
+
+            await addJob(repoIndexQueue, 'repo-index', {
+                repoId: repositoryRecord.id,
+                branchId: branchId,
+                jobId: createdJob.id,
+                owner: repositoryRecord.owner,
+                repo: repositoryRecord.name,
+                url: repositoryRecord.url,
+                userId: repositoryRecord.userId,
+                installationId: repositoryRecord.installationId,
+                baseCommitSha: oldCommitSha,
+                headCommitSha: newCommitSha,
+            });
+
+            logger.info(
+                {
+                    repo: fullName,
+                    branch: branchName,
+                    jobId: createdJob.id,
+                    oldSha: oldCommitSha,
+                    newSha: newCommitSha,
+                },
+                'Push event - diff-based indexing job created',
+            );
+        } catch (error) {
+            logger.error({ error, fullName, branchName }, 'Error processing push event');
+        }
+    }
+
     if (event === 'ping') {
         logger.info('GitHub App ping received');
     }

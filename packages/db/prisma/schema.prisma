@@ -147,6 +147,9 @@ model RepoIndexingJob {
   branchId       String
 
   commitSha      String
+  baseCommitSha  String?
+  headCommitSha  String?
+
   status         String   @default("pending")
 
   retryCount     Int      @default(0)

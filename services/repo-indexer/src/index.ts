@@ -4,8 +4,8 @@ import prisma from '@repo/db';
 import { logger } from '@repo/logger';
 import { addJob, createEventPublisher, createQueue, createWorker } from '@repo/queue';
 import { Octokit } from 'octokit';
-import { indexCodebase } from './lib/embedding.js';
-import { type FileContent, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
+import { indexChangedFiles, indexCodebase } from './lib/embedding.js';
+import { type FileContent, fetchChangedFiles, fetchRepositoryFiles, type RepoDetails } from './lib/github.js';
 import { pineconeIndex } from './lib/pinecone.js';
 
 const QUEUE_NAME = 'repo-index';
@@ -22,6 +22,8 @@ interface RepoIndexMessage {
     userId: string;
     installationId: string;
     retryCount?: number;
+    baseCommitSha?: string;
+    headCommitSha?: string;
 }
 
 interface PRContextMessage {
@@ -146,8 +148,8 @@ async function startContextWorker(): Promise<void> {
 async function startWorker(): Promise<void> {
     repoIndexWorker = createWorker(QUEUE_NAME, async (job) => {
         const message = job.data as RepoIndexMessage;
-        const { repoId, branchId, jobId, userId, owner, repo, url } = message;
-        logger.info({ repoId, branchId, jobId, userId }, 'Received index-repo event');
+        const { repoId, branchId, jobId, userId, owner, repo, url, baseCommitSha, headCommitSha } = message;
+        logger.info({ repoId, branchId, jobId, userId, baseCommitSha, headCommitSha }, 'Received index-repo event');
 
         await prisma.repoIndexingJob.update({
             where: { id: jobId },
@@ -174,26 +176,77 @@ async function startWorker(): Promise<void> {
                 throw new Error('No GitHub access token found for user');
             }
 
-            const repoDetails: RepoDetails = {
-                repoId,
-                owner,
-                repo,
-                url,
-            };
+            const octokit = new Octokit({ auth: accessToken });
+            let indexedCount = 0;
+            let removedCount = 0;
 
-            const files = await fetchRepositoryFiles(new Octokit({ auth: accessToken }), repoDetails, async (file) => {
-                logger.info({ path: file.path, size: file.size }, 'Processing file');
-            });
+            if (baseCommitSha && headCommitSha && baseCommitSha !== headCommitSha) {
+                logger.info({ repoId, branchId, baseCommitSha, headCommitSha }, 'Using diff-based indexing');
 
-            logger.info({ repoId, branchId, totalFiles: files.length }, 'Fetched all files from repository');
+                const { changedFiles, isFullIndex } = await fetchChangedFiles(
+                    octokit,
+                    owner,
+                    repo,
+                    baseCommitSha,
+                    headCommitSha,
+                );
 
-            const indexedCount = await indexCodebase(files, {
-                repoId,
-                branchId,
-                jobId,
-                owner,
-                repo,
-            });
+                if (!isFullIndex && changedFiles.length > 0) {
+                    const result = await indexChangedFiles(changedFiles, {
+                        repoId,
+                        branchId,
+                        jobId,
+                        owner,
+                        repo,
+                    });
+                    indexedCount = result.indexedCount;
+                    removedCount = result.removedCount;
+                } else {
+                    logger.info({ repoId, branchId }, 'Falling back to full indexing');
+                    const repoDetails: RepoDetails = {
+                        repoId,
+                        owner,
+                        repo,
+                        url,
+                    };
+
+                    const files = await fetchRepositoryFiles(octokit, repoDetails, async (file) => {
+                        logger.info({ path: file.path, size: file.size }, 'Processing file');
+                    });
+
+                    logger.info({ repoId, branchId, totalFiles: files.length }, 'Fetched all files from repository');
+
+                    indexedCount = await indexCodebase(files, {
+                        repoId,
+                        branchId,
+                        jobId,
+                        owner,
+                        repo,
+                    });
+                }
+            } else {
+                logger.info({ repoId, branchId }, 'No diff info, using full indexing');
+                const repoDetails: RepoDetails = {
+                    repoId,
+                    owner,
+                    repo,
+                    url,
+                };
+
+                const files = await fetchRepositoryFiles(octokit, repoDetails, async (file) => {
+                    logger.info({ path: file.path, size: file.size }, 'Processing file');
+                });
+
+                logger.info({ repoId, branchId, totalFiles: files.length }, 'Fetched all files from repository');
+
+                indexedCount = await indexCodebase(files, {
+                    repoId,
+                    branchId,
+                    jobId,
+                    owner,
+                    repo,
+                });
+            }
 
             await prisma.repoIndexingJob.update({
                 where: { id: jobId },
@@ -213,12 +266,12 @@ async function startWorker(): Promise<void> {
                     jobId,
                     type: 'JOB_COMPLETED',
                     status: 'success',
-                    message: `Indexing completed. ${indexedCount} files indexed.`,
-                    details: JSON.stringify({ indexedCount }),
+                    message: `Indexing completed. ${indexedCount} files indexed, ${removedCount} removed.`,
+                    details: JSON.stringify({ indexedCount, removedCount }),
                 },
             });
 
-            logger.info({ repoId, branchId, jobId, indexedCount }, 'Indexing job completed');
+            logger.info({ repoId, branchId, jobId, indexedCount, removedCount }, 'Indexing job completed');
         } catch (error) {
             logger.error({ error, repoId, branchId, jobId }, 'Indexing job failed');
 
