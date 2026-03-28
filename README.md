@@ -203,3 +203,33 @@ You can develop a specific package by using a filter:
 pnpm dev --filter=web
 pnpm dev --filter=ai-review-worker
 ```
+
+## Roadmap - Feature Parity with CodeRabbit
+
+### Already Implemented ✅
+- PR webhook handling
+- Repository indexing with Pinecone vector store
+- AI code review generation (Gemini)
+- Inline comments + summary with walkthrough, sequence diagrams, poem
+- GitHub Check Run integration
+- Real-time streaming (SSE)
+- Dashboard with review history
+- Repository management page
+
+### Todo List - Missing Features
+
+- [ ] **Chat/Conversation** - Chat interface for follow-up questions about code
+- [ ] **Auto-PR description** - Automatically generate PR descriptions
+- [ ] **Custom review rules** - Configurable rules (security, performance, best practices)
+- [ ] **Accept/Reject UI** - Dashboard to accept AI suggestions directly
+- [ ] **Security-specific scanning** - Dedicated vulnerability detection
+- [ ] **Test generation** - Suggest or generate tests
+- [ ] **Code explanation** - Ask for explanations of specific code sections
+- [ ] **Review automation rules** - Configure when to auto-review (labels, paths, authors)
+- [ ] **Team/Organization management** - Multi-tenant support
+- [ ] **Billing/Subscription** - Monetization features
+- [ ] **API for external access** - Programmatic integrations
+- [ ] **Review analytics** - Statistics on review patterns
+- [ ] **File deep-dive view** - Detailed per-file review UI in dashboard
+- [ ] **Commit-level analysis** - Analyze individual commits (beyond just PRs)
+- [ ] **Notification preferences** - Granular alert settings
