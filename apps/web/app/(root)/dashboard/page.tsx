@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchGitHubStats } from '@/lib/github/github-stats';
+import { fetchReviewStats } from '@/lib/review';
 import { StatCard, StatCardSkeleton } from './_components';
 
 function transformGitHubStatsToStats(githubStats: {
@@ -38,13 +39,73 @@ function transformGitHubStatsToStats(githubStats: {
     ];
 }
 
+function transformReviewStatsToStats(reviewStats: {
+    total: number;
+    thisWeek: number;
+    completed: number;
+    pending: number;
+    failed: number;
+    critical: number;
+    warning: number;
+    suggestion: number;
+    avgIssuesPerReview: number;
+    trend: { week: string; count: number }[];
+}) {
+    return [
+        {
+            id: 'STAT-003',
+            label: 'Total Reviews',
+            value: reviewStats.total,
+            change: `+${reviewStats.thisWeek} this week`,
+            status: reviewStats.pending > 0 ? 'Pending' : 'Complete',
+            statusColor: reviewStats.pending > 0 ? '#f59e0b' : '#16a34a',
+            tag: 'Reviews',
+            tagIcon: '◈',
+            tagColor: '#8b5cf6',
+            accentColor: '#8b5cf6',
+            trend: reviewStats.trend.map((t) => t.count),
+        },
+        {
+            id: 'STAT-004',
+            label: 'Issues Found',
+            value: reviewStats.critical + reviewStats.warning + reviewStats.suggestion,
+            change: `${reviewStats.critical} critical, ${reviewStats.warning} warning`,
+            status: reviewStats.completed > 0 ? 'Analyzed' : 'No Data',
+            statusColor: reviewStats.completed > 0 ? '#6366f1' : '#9ca3af',
+            tag: 'AI Analysis',
+            tagIcon: '◈',
+            tagColor: '#ec4899',
+            accentColor: '#ec4899',
+            trend: reviewStats.trend.map((t) => t.count * 2),
+        },
+    ];
+}
+
 export default function DashboardPage() {
-    const { data, isLoading, error } = useQuery({
+    const {
+        data: githubData,
+        isLoading: githubLoading,
+        error: githubError,
+    } = useQuery({
         queryKey: ['github-stats'],
         queryFn: fetchGitHubStats,
     });
 
-    const stats = data ? transformGitHubStatsToStats(data?.content) : [];
+    const {
+        data: reviewData,
+        isLoading: reviewLoading,
+        error: reviewError,
+    } = useQuery({
+        queryKey: ['review-stats'],
+        queryFn: fetchReviewStats,
+    });
+
+    const githubStats = githubData ? transformGitHubStatsToStats(githubData.content) : [];
+    const reviewStats = reviewData ? transformReviewStatsToStats(reviewData) : [];
+    const allStats = [...githubStats, ...reviewStats];
+
+    const isLoading = githubLoading || reviewLoading;
+    const error = githubError || reviewError;
 
     return (
         <div className="min-h-screen bg-neutral-50 p-0 text-neutral-700">
@@ -54,7 +115,7 @@ export default function DashboardPage() {
                         Dashboard Overview
                     </h1>
                     <p className="font-mono text-xs text-neutral-400">
-                        Tracking your codebase activity across all connected sources.
+                        Tracking your codebase activity and AI code review patterns.
                     </p>
                 </div>
 
@@ -63,34 +124,12 @@ export default function DashboardPage() {
                         <div className="text-red-500 font-mono text-sm">Failed to load stats: {error.message}</div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         {isLoading
-                            ? Array.from({ length: 2 }).map((_, i) => <StatCardSkeleton key={i} index={i} />)
-                            : stats.map((stat, i) => <StatCard key={stat.id} stat={stat} index={i} />)}
+                            ? Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} index={i} />)
+                            : allStats.map((stat, i) => <StatCard key={stat.id} stat={stat} index={i} />)}
                     </div>
                 )}
-
-                <div
-                    className={`mt-5 flex items-center justify-between rounded-md border border-neutral-200 bg-white px-[18px] py-3.5 transition-all duration-700 ease-out opacity-100`}
-                >
-                    <div className="flex gap-6">
-                        {[
-                            { label: 'Last sync', value: '2 min ago' },
-                            { label: 'Active branches', value: '12' },
-                            { label: 'Open PRs', value: '7' },
-                            { label: 'Pending reviews', value: '3' },
-                        ].map(({ label, value }) => (
-                            <div key={label}>
-                                <div className="mb-0.5 font-mono text-[10px] text-neutral-400">{label}</div>
-                                <div className="font-mono text-[13px] text-neutral-600">{value}</div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="text-right font-mono text-[10px] text-neutral-400">
-                        <div>MF-DASH · v2.4.1</div>
-                        <div className="mt-0.5 text-neutral-500">Auto-refresh enabled</div>
-                    </div>
-                </div>
             </div>
         </div>
     );

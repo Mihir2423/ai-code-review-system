@@ -50,3 +50,24 @@ export interface IssueWithMetadata {
         newCode: string;
     };
 }
+
+export interface ReviewStats {
+    total: number;
+    thisWeek: number;
+    thisMonth: number;
+    completed: number;
+    pending: number;
+    failed: number;
+    avgIssuesPerReview: number;
+    critical: number;
+    warning: number;
+    suggestion: number;
+    trend: {
+        week: string;
+        count: number;
+    }[];
+    issuesByFile: {
+        file: string;
+        count: number;
+    }[];
+}

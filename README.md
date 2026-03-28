@@ -113,7 +113,9 @@ sequenceDiagram
 ## Indexing Features
 
 ### File Filtering
+
 The repo-indexer automatically excludes:
+
 - **Package files**: `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`
 - **Binary assets**: Images (`.png`, `.jpg`, `.gif`, `.svg`, `.webp`), Videos, PDFs
 - **Build artifacts**: `node_modules`, `dist`, `build`, `.next`, `.nuxt`
@@ -121,35 +123,42 @@ The repo-indexer automatically excludes:
 - **System files**: `.DS_Store`, `Thumbs.db`
 
 ### Chunking Strategy
+
 - **Chunk size**: 500 lines
 - **Overlap**: 50 lines (for context continuity)
 - Each chunk gets its own embedding stored in `FileChunk` table
 
 ### Retry Mechanism
+
 - **Retryable errors**: Rate limits, quota exceeded
 - **Max retries**: 3
 - **Backoff**: Exponential (60s, 120s, 240s)
 - Failed jobs are marked as `pending` and retried automatically
 
 ### Diff-Based Indexing (Production Optimization)
+
 The system uses intelligent diff-based indexing to avoid full re-indexing:
 
 **Branch Create Event:**
+
 - If base branch is indexed → mark new branch as indexed (no job)
 - If base branch not indexed → trigger full indexing
 
 **Push Event:**
+
 - Compare `before` (old commit SHA) vs `after` (new commit SHA)
 - If identical → skip indexing
 - If different → create diff-based job with baseCommitSha + headCommitSha
 
 **Worker Logic:**
+
 - Uses GitHub Compare API: `GET /repos/{owner}/{repo}/compare/{base}...{head}`
 - Only fetch changed files (added, modified, removed)
 - Skip unchanged files via hash comparison
 - Delete removed files from index
 
 **Edge Cases Handled:**
+
 - Force push → fallback to full indexing
 - First commit (no base) → fallback to full indexing
 - Large diff (500+ files) → fallback to full indexing
@@ -207,6 +216,7 @@ pnpm dev --filter=ai-review-worker
 ## Roadmap - Feature Parity with CodeRabbit
 
 ### Already Implemented ✅
+
 - PR webhook handling
 - Repository indexing with Pinecone vector store
 - AI code review generation (Gemini)
@@ -229,7 +239,7 @@ pnpm dev --filter=ai-review-worker
 - [ ] **Team/Organization management** - Multi-tenant support
 - [ ] **Billing/Subscription** - Monetization features
 - [ ] **API for external access** - Programmatic integrations
-- [ ] **Review analytics** - Statistics on review patterns
+- [x] **Review analytics** - Statistics on review patterns
 - [ ] **File deep-dive view** - Detailed per-file review UI in dashboard
 - [ ] **Commit-level analysis** - Analyze individual commits (beyond just PRs)
 - [ ] **Notification preferences** - Granular alert settings

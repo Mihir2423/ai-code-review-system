@@ -170,3 +170,51 @@ export function useReviewHistory() {
         queryFn: fetchReviewHistory,
     });
 }
+
+export interface ReviewStats {
+    total: number;
+    thisWeek: number;
+    thisMonth: number;
+    completed: number;
+    pending: number;
+    failed: number;
+    avgIssuesPerReview: number;
+    critical: number;
+    warning: number;
+    suggestion: number;
+    trend: {
+        week: string;
+        count: number;
+    }[];
+    issuesByFile: {
+        file: string;
+        count: number;
+    }[];
+}
+
+export async function fetchReviewStats(): Promise<ReviewStats> {
+    const { data: session } = await authClient.getSession();
+
+    if (!session) {
+        throw new Error('No session found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/review/stats`, {
+        headers: {
+            Authorization: `Bearer ${session.session?.token}`,
+        },
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to fetch review stats');
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+        throw new Error(result.message || 'Failed to fetch review stats');
+    }
+
+    return result.content;
+}
