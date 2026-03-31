@@ -701,6 +701,84 @@ async function startPrConversationWorker(): Promise<void> {
                 return;
             }
 
+            const openComments = existingReview.comments.filter((c: { status: string }) => c.status === 'open');
+            const commentLower = commentBody.toLowerCase();
+            const isResolutionIntent =
+                commentLower.includes('fixed') ||
+                commentLower.includes('resolved') ||
+                commentLower.includes('dismiss') ||
+                commentLower.includes('not important') ||
+                commentLower.includes('ignore') ||
+                commentLower.includes("won't fix");
+
+            if (isResolutionIntent && openComments.length > 0) {
+                const fileMatch = commentBody.match(/(?:file[:\s]*|[/@]?)(\S+\.\w+)/i);
+                const lineMatch = commentBody.match(/line[:\s]*(\d+)/i);
+
+                let matchedComment = null;
+
+                if (fileMatch || lineMatch) {
+                    const fileName = fileMatch?.[1];
+                    const lineNum = lineMatch?.[1];
+                    matchedComment = openComments.find((c: { path: string | null; line: number | null }) => {
+                        if (fileName && c.path?.includes(fileName)) return true;
+                        if (lineNum && c.line === parseInt(lineNum, 10)) return true;
+                        return false;
+                    });
+                }
+
+                if (matchedComment) {
+                    await prisma.reviewComment.update({
+                        where: { id: matchedComment.id },
+                        data: { status: 'resolved' },
+                    });
+
+                    await postComment(
+                        owner,
+                        repo,
+                        prNumber,
+                        `Got it @${commenter}! I've marked that issue as resolved. Let me know if you need anything else!`,
+                        octokit,
+                    );
+                    logger.info({ prNumber, commentId: matchedComment.id }, 'Resolved issue based on user context');
+                    return;
+                }
+
+                if (openComments.length === 1) {
+                    await prisma.reviewComment.update({
+                        where: { id: openComments[0].id },
+                        data: { status: 'resolved' },
+                    });
+
+                    await postComment(
+                        owner,
+                        repo,
+                        prNumber,
+                        `Got it @${commenter}! I've marked that issue as resolved. Let me know if you need anything else!`,
+                        octokit,
+                    );
+                    logger.info({ prNumber, commentId: openComments[0].id }, 'Resolved single open issue');
+                    return;
+                }
+
+                const issuesList = openComments
+                    .map(
+                        (c: { id: string; path: string | null; line: number | null; body: string }, idx: number) =>
+                            `${idx + 1}. [${c.path || 'general'}:${c.line || 'N/A'}] ${c.body.substring(0, 100)}...`,
+                    )
+                    .join('\n');
+
+                await postComment(
+                    owner,
+                    repo,
+                    prNumber,
+                    `I see you want to resolve or dismiss an issue, but I found **${openComments.length}** open issues. Which one are you referring to?\n\n${issuesList}\n\nPlease specify by:\n- Replying to the specific comment inline\n- Or mentioning the file and line number\n- Or the issue number (1-${openComments.length})`,
+                    octokit,
+                );
+                logger.info({ prNumber, openCount: openComments.length }, 'Asked user to clarify which issue');
+                return;
+            }
+
             await postComment(
                 owner,
                 repo,
