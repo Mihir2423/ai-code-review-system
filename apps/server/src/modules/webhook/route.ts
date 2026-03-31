@@ -6,9 +6,13 @@ import express from 'express';
 
 const QUEUE_NAME = 'pr-review';
 const REPO_INDEX_QUEUE_NAME = 'repo-index';
+const PR_REVIEW_UPDATE_QUEUE = 'pr-review-update';
+const PR_CONVERSATION_QUEUE = 'pr-conversation';
 
 const prReviewQueue = createQueue(QUEUE_NAME);
 const repoIndexQueue = createQueue(REPO_INDEX_QUEUE_NAME);
+const prReviewUpdateQueue = createQueue(PR_REVIEW_UPDATE_QUEUE);
+const prConversationQueue = createQueue(PR_CONVERSATION_QUEUE);
 
 const WEBHOOK_SECRET = process.env.GITHUB_BOT_WEBHOOK_SECRET;
 
@@ -240,6 +244,7 @@ router.post('/github', async (req, res) => {
                             prNumber: pr?.number,
                             userId: repository.userId,
                             installationId: repository.installation.installationId,
+                            action: 'opened',
                         },
                         {
                             jobId: `pr-review-${owner}-${repoName}-${pr?.number}-${action}`,
@@ -252,6 +257,101 @@ router.post('/github', async (req, res) => {
             } catch (error) {
                 logger.error({ error, fullName }, 'Error processing PR event');
             }
+        }
+
+        if (owner && repoName && fullName && action === 'synchronize') {
+            try {
+                const repository = await prisma.repository.findFirst({
+                    where: { fullName },
+                    include: { installation: true },
+                });
+
+                if (repository) {
+                    await addJob(
+                        prReviewUpdateQueue,
+                        'pr-review-update',
+                        {
+                            owner,
+                            repo: repoName,
+                            prNumber: pr?.number,
+                            userId: repository.userId,
+                            installationId: repository.installation.installationId,
+                            newCommitSha: pr?.head?.sha,
+                            action: 'synchronize',
+                        },
+                        {
+                            jobId: `pr-review-update-${owner}-${repoName}-${pr?.number}-${action}`,
+                        },
+                    );
+                    logger.info({ owner, repo: repoName, prNumber: pr?.number, action }, 'PR update review queued');
+                } else {
+                    logger.warn({ fullName }, 'Repository not found in database');
+                }
+            } catch (error) {
+                logger.error({ error, fullName }, 'Error processing PR synchronize event');
+            }
+        }
+    }
+
+    if (event === 'issue_comment') {
+        const { action, issue, repository: repo, comment } = req.body;
+
+        if (action !== 'created') {
+            return res.sendStatus(200);
+        }
+
+        if (!issue?.pull_request) {
+            logger.info({ issueNumber: issue?.number }, 'Comment is not on a PR, skipping');
+            return res.sendStatus(200);
+        }
+
+        const owner = repo?.owner?.login;
+        const repoName = repo?.name;
+        const fullName = repo?.full_name;
+        const prNumber = issue?.number;
+        const commentBody = comment?.body || '';
+        const commenter = comment?.user?.login;
+
+        if (!owner || !repoName || !fullName || !prNumber) {
+            logger.warn({ event }, 'Missing required fields for issue_comment');
+            return res.sendStatus(200);
+        }
+
+        if (commenter?.includes('[bot]')) {
+            logger.info({ commenter }, 'Skipping bot comment');
+            return res.sendStatus(200);
+        }
+
+        try {
+            const repository = await prisma.repository.findFirst({
+                where: { fullName },
+                include: { installation: true },
+            });
+
+            if (repository) {
+                await addJob(
+                    prConversationQueue,
+                    'pr-conversation',
+                    {
+                        owner,
+                        repo: repoName,
+                        prNumber,
+                        commentId: comment?.id,
+                        commentBody,
+                        commenter,
+                        userId: repository.userId,
+                        installationId: repository.installation.installationId,
+                    },
+                    {
+                        jobId: `pr-conversation-${owner}-${repoName}-${prNumber}-${comment?.id}`,
+                    },
+                );
+                logger.info({ owner, repo: repoName, prNumber, commentId: comment?.id }, 'PR conversation queued');
+            } else {
+                logger.warn({ fullName }, 'Repository not found in database');
+            }
+        } catch (error) {
+            logger.error({ error, fullName, prNumber }, 'Error processing issue_comment event');
         }
     }
 
@@ -435,14 +535,18 @@ router.post('/github', async (req, res) => {
     res.sendStatus(200);
 });
 
-export { router as webhookRoutes, prReviewQueue };
+export { router as webhookRoutes, prReviewQueue, prReviewUpdateQueue, prConversationQueue };
 
 process.on('SIGTERM', async () => {
     await prReviewQueue.close();
+    await prReviewUpdateQueue.close();
+    await prConversationQueue.close();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     await prReviewQueue.close();
+    await prReviewUpdateQueue.close();
+    await prConversationQueue.close();
     process.exit(0);
 });

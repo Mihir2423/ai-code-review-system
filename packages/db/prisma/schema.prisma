@@ -237,14 +237,42 @@ model Review {
   review                String
   issues                String[]
   status                String @default("pending")
+  lastReviewedCommitSha String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   events                ReviewEvent[]
+  comments              ReviewComment[]
 
   @@unique([repositoryId, prNumber])
   @@index([repositoryId])
   @@map("review")
+}
+
+model ReviewComment {
+  id              String   @id @default(cuid())
+  reviewId        String
+  review          Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  
+  githubCommentId Int?
+  path            String?
+  line            Int?
+  side            String?
+  
+  body            String
+  suggestion      String?
+  severity        String
+  
+  status          String   @default("open")
+  resolvedAt      DateTime?
+  resolvedByCommitSha String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([reviewId])
+  @@index([status])
+  @@map("review_comment")
 }
 
 model ReviewEvent {

@@ -26,6 +26,15 @@ interface AIReviewMessage {
     commitSha: string;
     checkRunId?: number;
     reviewId?: string;
+    previousCommitSha?: string;
+    openIssues?: Array<{
+        path: string | null;
+        line: number | null;
+        body: string;
+        suggestion: string | null;
+        severity: string;
+    }>;
+    isUpdate?: boolean;
 }
 
 const aiReviewQueue = createQueue(QUEUE_NAME);
@@ -51,7 +60,12 @@ async function updatePRDescription(
     prNumber: number,
     uniqueIssues: ReviewIssue[],
     octokit: Octokit,
+    isUpdate?: boolean,
 ): Promise<void> {
+    if (isUpdate) {
+        logger.info({ owner, repo, prNumber }, 'Skipping PR description update for incremental review');
+        return;
+    }
     try {
         const { data: pr } = await octokit.rest.pulls.get({
             owner,
@@ -273,6 +287,9 @@ async function startWorker(): Promise<void> {
             commitSha,
             checkRunId,
             reviewId,
+            previousCommitSha,
+            openIssues,
+            isUpdate,
         } = reviewMessage;
 
         if (!installationId) {
@@ -378,10 +395,11 @@ async function startWorker(): Promise<void> {
                 issues: issuesWithLines,
                 summary: summaryMessage,
                 reviewId,
+                isUpdate,
             });
             logger.info({ repoId, prNumber, issuesCount: issuesWithLines.length }, 'Sent issues and summary to queue');
 
-            updatePRDescription(owner, repo, prNumber, uniqueIssues, octokit);
+            updatePRDescription(owner, repo, prNumber, uniqueIssues, octokit, isUpdate);
 
             let issuesWithMetadata: IssueWithMetadata[] = [];
             try {
@@ -444,8 +462,67 @@ async function startWorker(): Promise<void> {
                         status: 'completed',
                         review: summaryMessage,
                         issues: issuesWithMetadata.map((i) => JSON.stringify(i)),
+                        lastReviewedCommitSha: commitSha,
                     },
                 });
+
+                if (isUpdate && openIssues && openIssues.length > 0) {
+                    const existingComments = await prisma.reviewComment.findMany({
+                        where: {
+                            reviewId: existingReview.id,
+                            status: 'open',
+                        },
+                    });
+
+                    const newIssueHashes = new Set(
+                        issuesWithLines.map(
+                            (issue) => `${issue.file}:${issue.line}:${issue.description.substring(0, 30)}`,
+                        ),
+                    );
+
+                    for (const existingComment of existingComments) {
+                        const commentHash = `${existingComment.path}:${existingComment.line}:${existingComment.body.substring(0, 30)}`;
+                        if (!newIssueHashes.has(commentHash)) {
+                            await prisma.reviewComment.update({
+                                where: { id: existingComment.id },
+                                data: {
+                                    status: 'resolved',
+                                    resolvedAt: new Date(),
+                                    resolvedByCommitSha: commitSha,
+                                },
+                            });
+                            logger.info(
+                                { commentId: existingComment.id },
+                                'Auto-resolved issue that no longer appears',
+                            );
+                        }
+                    }
+                }
+
+                for (const issue of issuesWithLines) {
+                    const existingComment = await prisma.reviewComment.findFirst({
+                        where: {
+                            reviewId: existingReview.id,
+                            path: issue.file,
+                            line: issue.line,
+                            status: 'open',
+                        },
+                    });
+
+                    if (!existingComment) {
+                        await prisma.reviewComment.create({
+                            data: {
+                                reviewId: existingReview.id,
+                                path: issue.file,
+                                line: issue.line,
+                                body: issue.description,
+                                suggestion: issue.suggestion,
+                                severity: issue.severity,
+                                status: 'open',
+                            },
+                        });
+                    }
+                }
             } else {
                 await prisma.review.create({
                     data: {

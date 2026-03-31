@@ -9,6 +9,8 @@ const QUEUE_NAME = 'pr-review';
 const COMMENT_QUEUE = 'pr-comment';
 const CONTEXT_QUEUE = 'pr-context';
 const ISSUES_QUEUE = 'pr-issues';
+const PR_REVIEW_UPDATE_QUEUE = 'pr-review-update';
+const PR_CONVERSATION_QUEUE = 'pr-conversation';
 
 interface PRReviewMessage {
     owner: string;
@@ -17,6 +19,28 @@ interface PRReviewMessage {
     userId: string;
     installationId: string;
     reviewId?: string;
+    action?: string;
+}
+
+interface PRReviewUpdateMessage {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    userId: string;
+    installationId: string;
+    newCommitSha: string;
+    action?: string;
+}
+
+interface PRConversationMessage {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    commentId: string;
+    commentBody: string;
+    commenter: string;
+    userId: string;
+    installationId: string;
 }
 
 interface PRDetails {
@@ -53,15 +77,21 @@ interface PRIssuesMessage {
     commitSha: string;
     issues: ReviewIssue[];
     summary?: string;
+    reviewId?: string;
+    isUpdate?: boolean;
 }
 
 const prReviewQueue = createQueue(QUEUE_NAME);
 const commentQueue = createQueue(COMMENT_QUEUE);
 const contextQueue = createQueue(CONTEXT_QUEUE);
+const prReviewUpdateQueue = createQueue(PR_REVIEW_UPDATE_QUEUE);
+const prConversationQueue = createQueue(PR_CONVERSATION_QUEUE);
 
 let prReviewWorker: ReturnType<typeof createWorker>;
 let commentWorker: ReturnType<typeof createWorker>;
 let issuesWorker: ReturnType<typeof createWorker>;
+let prReviewUpdateWorker: ReturnType<typeof createWorker>;
+let prConversationWorker: ReturnType<typeof createWorker>;
 
 const eventPublisher = createEventPublisher();
 
@@ -420,9 +450,10 @@ async function startCommentWorker(): Promise<void> {
 
 async function startIssuesWorker(): Promise<void> {
     issuesWorker = createWorker(ISSUES_QUEUE, async (job) => {
-        const { owner, repo, prNumber, installationId, commitSha, issues, summary } = job.data as PRIssuesMessage;
+        const { owner, repo, prNumber, installationId, commitSha, issues, summary, reviewId, isUpdate } =
+            job.data as PRIssuesMessage;
 
-        logger.info({ owner, repo, prNumber }, 'Processing pr-issues job');
+        logger.info({ owner, repo, prNumber, isUpdate }, 'Processing pr-issues job');
 
         if (!installationId) {
             logger.error('No installationId provided in message');
@@ -437,8 +468,36 @@ async function startIssuesWorker(): Promise<void> {
             return;
         }
 
+        let issuesToPost = issues;
+
+        if (isUpdate && reviewId) {
+            const existingComments = await prisma.reviewComment.findMany({
+                where: {
+                    reviewId,
+                    status: 'open',
+                },
+            });
+
+            const existingIssueKeys = new Set(
+                existingComments.map(
+                    (c: { path: string | null; line: number | null; body: string }) =>
+                        `${c.path}:${c.line}:${c.body.substring(0, 30)}`,
+                ),
+            );
+
+            issuesToPost = issues.filter((issue) => {
+                const issueKey = `${issue.file}:${issue.line}:${issue.description.substring(0, 30)}`;
+                return !existingIssueKeys.has(issueKey);
+            });
+
+            logger.info(
+                { total: issues.length, newIssues: issuesToPost.length, existing: existingComments.length },
+                'Filtered to only post new issues',
+            );
+        }
+
         const failedIssues: { issue: ReviewIssue; error: unknown }[] = [];
-        for (const issue of issues) {
+        for (const issue of issuesToPost) {
             try {
                 await postInlineComment(owner, repo, prNumber, commitSha, issue, octokit);
             } catch (error) {
@@ -454,16 +513,320 @@ async function startIssuesWorker(): Promise<void> {
             );
         }
 
-        if (summary) {
+        if (summary && !isUpdate) {
             try {
                 await postComment(owner, repo, prNumber, summary, octokit);
             } catch (error) {
                 logger.error({ error, owner, repo, prNumber }, 'Failed to post summary comment');
             }
         }
+
+        if (isUpdate && issuesToPost.length > 0) {
+            try {
+                await postComment(
+                    owner,
+                    repo,
+                    prNumber,
+                    `## 🔄 Review Update\n\nI've reviewed the new changes and found **${issuesToPost.length}** new issue(s) that need attention.\n\n> [!NOTE]\n> ${issuesToPost.length} of ${issues.length} previous issues have been resolved automatically.`,
+                    octokit,
+                );
+            } catch (error) {
+                logger.error({ error, owner, repo, prNumber }, 'Failed to post update comment');
+            }
+        }
     });
 
     logger.info({ queue: ISSUES_QUEUE }, 'Issues worker started');
+}
+
+async function startPrReviewUpdateWorker(): Promise<void> {
+    prReviewUpdateWorker = createWorker(PR_REVIEW_UPDATE_QUEUE, async (job) => {
+        const { owner, repo, prNumber, userId, installationId, newCommitSha } = job.data as PRReviewUpdateMessage;
+
+        logger.info({ owner, repo, prNumber, newCommitSha }, 'Received pr-review-update event');
+
+        if (!installationId) {
+            logger.error('No installationId provided in message');
+            return;
+        }
+
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
+            return;
+        }
+
+        try {
+            const repository = await prisma.repository.findFirst({
+                where: { owner, name: repo, userId },
+            });
+
+            if (!repository) {
+                logger.warn({ owner, repo }, 'Repository not found in database');
+                return;
+            }
+
+            const existingReview = await prisma.review.findFirst({
+                where: {
+                    repositoryId: repository.id,
+                    prNumber,
+                },
+                include: {
+                    comments: {
+                        where: { status: 'open' },
+                    },
+                },
+            });
+
+            if (!existingReview) {
+                logger.info({ prNumber }, 'No existing review found, triggering fresh review');
+                await addJob(
+                    prReviewQueue,
+                    'pr-review',
+                    {
+                        owner,
+                        repo: repo,
+                        prNumber,
+                        userId,
+                        installationId,
+                        action: 'synchronize',
+                    },
+                    {
+                        jobId: `pr-review-${owner}-${repo}-${prNumber}-synchronize`,
+                    },
+                );
+                return;
+            }
+
+            const prData = await reviewPullRequest(owner, repo, prNumber, octokit);
+
+            const previousCommitSha = existingReview.lastReviewedCommitSha;
+
+            const checkRunId = await createCheckRun(owner, repo, prData.commitSha, octokit);
+
+            const openIssues = existingReview.comments;
+
+            const contextQuery = `${prData.prTitle}\n${prData.prBody}`;
+
+            await addJob(contextQueue, 'pr-context', {
+                query: contextQuery,
+                repoId: repository.id,
+                owner,
+                repo: repo,
+                prNumber,
+                userId,
+                installationId,
+                diff: prData.diff,
+                commitSha: prData.commitSha,
+                checkRunId,
+                reviewId: existingReview.id,
+                previousCommitSha,
+                openIssues: openIssues.map(
+                    (c: {
+                        path: string | null;
+                        line: number | null;
+                        body: string;
+                        suggestion: string | null;
+                        severity: string;
+                    }) => ({
+                        path: c.path,
+                        line: c.line,
+                        body: c.body,
+                        suggestion: c.suggestion,
+                        severity: c.severity,
+                    }),
+                ),
+                isUpdate: true,
+            });
+
+            logger.info({ owner, repo, prNumber }, 'Queued incremental review with previous issues context');
+        } catch (error) {
+            logger.error({ error, owner, repo, prNumber }, 'Failed to process PR review update');
+        }
+    });
+
+    logger.info({ queue: PR_REVIEW_UPDATE_QUEUE }, 'PR review update worker started');
+}
+
+async function startPrConversationWorker(): Promise<void> {
+    prConversationWorker = createWorker(PR_CONVERSATION_QUEUE, async (job) => {
+        const { owner, repo, prNumber, commentId, commentBody, commenter, userId, installationId } =
+            job.data as PRConversationMessage;
+
+        logger.info({ owner, repo, prNumber, commentId, commenter }, 'Received pr-conversation event');
+
+        if (!installationId) {
+            logger.error('No installationId provided in message');
+            return;
+        }
+
+        let octokit: Octokit;
+        try {
+            octokit = await getBotOctokit(installationId);
+        } catch (error) {
+            logger.error({ error, installationId }, 'Failed to get bot octokit');
+            return;
+        }
+
+        try {
+            const repository = await prisma.repository.findFirst({
+                where: { owner, name: repo, userId },
+            });
+
+            if (!repository) {
+                logger.warn({ owner, repo }, 'Repository not found in database');
+                return;
+            }
+
+            const existingReview = await prisma.review.findFirst({
+                where: {
+                    repositoryId: repository.id,
+                    prNumber,
+                },
+                include: {
+                    comments: true,
+                },
+            });
+
+            if (!existingReview) {
+                await postComment(
+                    owner,
+                    repo,
+                    prNumber,
+                    `Hi @${commenter}! I couldn't find an existing review for this PR. Would you like me to start a fresh review?`,
+                    octokit,
+                );
+                return;
+            }
+
+            const normalizedBody = commentBody.toLowerCase().trim();
+
+            const notImportantPatterns = [
+                'not important',
+                'not relevant',
+                'ignore',
+                'dismiss',
+                'no need to fix',
+                'wont fix',
+                'skip',
+                'not needed',
+            ];
+
+            const fixedPatterns = ['fixed', 'resolved', 'done', 'addressed', 'solved', 'updated', 'changed'];
+
+            const isNotImportant = notImportantPatterns.some((pattern) => normalizedBody.includes(pattern));
+            const isFixed = fixedPatterns.some((pattern) => normalizedBody.includes(pattern));
+
+            if (isNotImportant) {
+                const { data: issueComments } = await octokit.rest.issues.listComments({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                });
+
+                const botComment = issueComments.find((c) => c.user?.type === 'Bot' || c.user?.login?.includes('bot'));
+
+                if (botComment) {
+                    await postComment(
+                        owner,
+                        repo,
+                        prNumber,
+                        `Understood @${commenter}. I'll dismiss this issue. Let me know if you have any other questions!`,
+                        octokit,
+                    );
+                }
+
+                const openComments = existingReview.comments.filter((c: { status: string }) => c.status === 'open');
+                if (openComments.length > 0) {
+                    await prisma.reviewComment.update({
+                        where: { id: openComments[0].id },
+                        data: { status: 'dismissed' },
+                    });
+
+                    await postComment(
+                        owner,
+                        repo,
+                        prNumber,
+                        `Noted! I've dismissed the issue. Thanks for the feedback @${commenter}!`,
+                        octokit,
+                    );
+                }
+
+                logger.info({ prNumber }, 'Marked issue as dismissed based on user feedback');
+            } else if (isFixed) {
+                const { data: pr } = await octokit.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                });
+
+                const newCommitSha = pr.head.sha;
+
+                const openComments = existingReview.comments.filter((c: { status: string }) => c.status === 'open');
+                if (openComments.length > 0) {
+                    const comment = openComments[0];
+
+                    const { data: files } = await octokit.rest.pulls.listFiles({
+                        owner,
+                        repo,
+                        pull_number: prNumber,
+                    });
+
+                    const changedFile = files.find((f) => f.filename === comment.path);
+
+                    if (changedFile) {
+                        await prisma.reviewComment.update({
+                            where: { id: comment.id },
+                            data: {
+                                status: 'resolved',
+                                resolvedAt: new Date(),
+                                resolvedByCommitSha: newCommitSha,
+                            },
+                        });
+
+                        await postComment(
+                            owner,
+                            repo,
+                            prNumber,
+                            `Thanks @${commenter}! I can see the fix has been applied. I'll mark this issue as resolved. Let me know if there's anything else!`,
+                            octokit,
+                        );
+                        logger.info({ prNumber, commentId: comment.id }, 'Marked issue as resolved');
+                    } else {
+                        await postComment(
+                            owner,
+                            repo,
+                            prNumber,
+                            `Thanks for letting me know @${commenter}! I don't see changes to \`${comment.path}\` in the latest commit. Could you point me to where the fix was applied?`,
+                            octokit,
+                        );
+                    }
+                } else {
+                    await postComment(
+                        owner,
+                        repo,
+                        prNumber,
+                        `Thanks @${commenter}! All issues appear to be resolved. Great work! 🎉`,
+                        octokit,
+                    );
+                }
+            } else {
+                await postComment(
+                    owner,
+                    repo,
+                    prNumber,
+                    `Hi @${commenter}! Thanks for the comment. I'm here to help with code review. Would you like me to:\n\n- Explain any of my previous suggestions?\n- Review new changes you've made?\n- Look at specific files?\n\nJust let me know!`,
+                    octokit,
+                );
+            }
+        } catch (error) {
+            logger.error({ error, owner, repo, prNumber }, 'Failed to process PR conversation');
+        }
+    });
+
+    logger.info({ queue: PR_CONVERSATION_QUEUE }, 'PR conversation worker started');
 }
 
 async function main(): Promise<void> {
@@ -473,6 +836,8 @@ async function main(): Promise<void> {
         await startPrReviewWorker();
         await startCommentWorker();
         await startIssuesWorker();
+        await startPrReviewUpdateWorker();
+        await startPrConversationWorker();
     } catch (error) {
         logger.error({ error }, 'Failed to start PR processor');
 
@@ -495,9 +860,13 @@ process.on('SIGTERM', async () => {
     await prReviewWorker?.close();
     await commentWorker?.close();
     await issuesWorker?.close();
+    await prReviewUpdateWorker?.close();
+    await prConversationWorker?.close();
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();
+    await prReviewUpdateQueue.close();
+    await prConversationQueue.close();
     await eventPublisher.close();
     process.exit(0);
 });
@@ -507,9 +876,13 @@ process.on('SIGINT', async () => {
     await prReviewWorker?.close();
     await commentWorker?.close();
     await issuesWorker?.close();
+    await prReviewUpdateWorker?.close();
+    await prConversationWorker?.close();
     await prReviewQueue.close();
     await commentQueue.close();
     await contextQueue.close();
+    await prReviewUpdateQueue.close();
+    await prConversationQueue.close();
     await eventPublisher.close();
     process.exit(0);
 });
