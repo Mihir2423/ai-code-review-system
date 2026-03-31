@@ -701,126 +701,15 @@ async function startPrConversationWorker(): Promise<void> {
                 return;
             }
 
-            const normalizedBody = commentBody.toLowerCase().trim();
+            await postComment(
+                owner,
+                repo,
+                prNumber,
+                `Hey @${commenter}! Thanks for your reply. I'm here to help with code review. What would you like me to do?\n\n- Explain any of my previous suggestions?\n- Review new changes you've made?\n- Dismiss or resolve an issue?\n- Something else?\n\nJust let me know!`,
+                octokit,
+            );
 
-            const notImportantPatterns = [
-                'not important',
-                'not relevant',
-                'ignore',
-                'dismiss',
-                'no need to fix',
-                'wont fix',
-                'skip',
-                'not needed',
-            ];
-
-            const fixedPatterns = ['fixed', 'resolved', 'done', 'addressed', 'solved', 'updated', 'changed'];
-
-            const isNotImportant = notImportantPatterns.some((pattern) => normalizedBody.includes(pattern));
-            const isFixed = fixedPatterns.some((pattern) => normalizedBody.includes(pattern));
-
-            if (isNotImportant) {
-                const { data: issueComments } = await octokit.rest.issues.listComments({
-                    owner,
-                    repo,
-                    issue_number: prNumber,
-                });
-
-                const botComment = issueComments.find((c) => c.user?.type === 'Bot' || c.user?.login?.includes('bot'));
-
-                if (botComment) {
-                    await postComment(
-                        owner,
-                        repo,
-                        prNumber,
-                        `Understood @${commenter}. I'll dismiss this issue. Let me know if you have any other questions!`,
-                        octokit,
-                    );
-                }
-
-                const openComments = existingReview.comments.filter((c: { status: string }) => c.status === 'open');
-                if (openComments.length > 0) {
-                    await prisma.reviewComment.update({
-                        where: { id: openComments[0].id },
-                        data: { status: 'dismissed' },
-                    });
-
-                    await postComment(
-                        owner,
-                        repo,
-                        prNumber,
-                        `Noted! I've dismissed the issue. Thanks for the feedback @${commenter}!`,
-                        octokit,
-                    );
-                }
-
-                logger.info({ prNumber }, 'Marked issue as dismissed based on user feedback');
-            } else if (isFixed) {
-                const { data: pr } = await octokit.rest.pulls.get({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                });
-
-                const newCommitSha = pr.head.sha;
-
-                const openComments = existingReview.comments.filter((c: { status: string }) => c.status === 'open');
-                if (openComments.length > 0) {
-                    const comment = openComments[0];
-
-                    const { data: files } = await octokit.rest.pulls.listFiles({
-                        owner,
-                        repo,
-                        pull_number: prNumber,
-                    });
-
-                    const changedFile = files.find((f) => f.filename === comment.path);
-
-                    if (changedFile) {
-                        await prisma.reviewComment.update({
-                            where: { id: comment.id },
-                            data: {
-                                status: 'resolved',
-                                resolvedAt: new Date(),
-                                resolvedByCommitSha: newCommitSha,
-                            },
-                        });
-
-                        await postComment(
-                            owner,
-                            repo,
-                            prNumber,
-                            `Thanks @${commenter}! I can see the fix has been applied. I'll mark this issue as resolved. Let me know if there's anything else!`,
-                            octokit,
-                        );
-                        logger.info({ prNumber, commentId: comment.id }, 'Marked issue as resolved');
-                    } else {
-                        await postComment(
-                            owner,
-                            repo,
-                            prNumber,
-                            `Thanks for letting me know @${commenter}! I don't see changes to \`${comment.path}\` in the latest commit. Could you point me to where the fix was applied?`,
-                            octokit,
-                        );
-                    }
-                } else {
-                    await postComment(
-                        owner,
-                        repo,
-                        prNumber,
-                        `Thanks @${commenter}! All issues appear to be resolved. Great work! 🎉`,
-                        octokit,
-                    );
-                }
-            } else {
-                await postComment(
-                    owner,
-                    repo,
-                    prNumber,
-                    `Hi @${commenter}! Thanks for the comment. I'm here to help with code review. Would you like me to:\n\n- Explain any of my previous suggestions?\n- Review new changes you've made?\n- Look at specific files?\n\nJust let me know!`,
-                    octokit,
-                );
-            }
+            logger.info({ prNumber, commenter }, 'Responded to user comment');
         } catch (error) {
             logger.error({ error, owner, repo, prNumber }, 'Failed to process PR conversation');
         }
