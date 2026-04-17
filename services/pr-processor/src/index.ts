@@ -17,6 +17,7 @@ interface PRReviewMessage {
     userId: string;
     installationId: string;
     reviewId?: string;
+    isSynchronize?: boolean;
 }
 
 interface PRDetails {
@@ -53,6 +54,7 @@ interface PRIssuesMessage {
     commitSha: string;
     issues: ReviewIssue[];
     summary?: string;
+    isSynchronize?: boolean;
 }
 
 const prReviewQueue = createQueue(QUEUE_NAME);
@@ -182,7 +184,7 @@ async function postInlineComment(
 
 async function startPrReviewWorker(): Promise<void> {
     prReviewWorker = createWorker(QUEUE_NAME, async (job) => {
-        const { owner, repo, prNumber, userId, installationId } = job.data as PRReviewMessage;
+        const { owner, repo, prNumber, userId, installationId, isSynchronize } = job.data as PRReviewMessage;
 
         logger.info({ owner, repo, prNumber }, 'Received pr-review event');
 
@@ -292,9 +294,10 @@ async function startPrReviewWorker(): Promise<void> {
                         commitSha: prData.commitSha,
                         checkRunId,
                         reviewId: review.id,
+                        isSynchronize: !!isSynchronize,
                     },
                     {
-                        jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}`,
+                        jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}-${Date.now()}`,
                     },
                 );
 
@@ -308,15 +311,16 @@ async function startPrReviewWorker(): Promise<void> {
                     { queueName: CONTEXT_QUEUE },
                 );
 
-                await addJob(
-                    commentQueue,
-                    'pr-comment',
-                    {
-                        owner,
-                        repo,
-                        prNumber,
-                        installationId,
-                        comment: `> [!NOTE]
+                if (!isSynchronize) {
+                    await addJob(
+                        commentQueue,
+                        'pr-comment',
+                        {
+                            owner,
+                            repo,
+                            prNumber,
+                            installationId,
+                            comment: `> [!NOTE]
 > Currently processing new changes in this PR. This may take a few minutes, please wait...
 >
 > \`\`\`ascii
@@ -328,20 +332,21 @@ async function startPrReviewWorker(): Promise<void> {
 >         (•ㅅ•)
 >         /　 づ
 > \`\`\``,
-                    },
-                    {
-                        jobId: `pr-comment-${owner}-${repo}-${prNumber}-${installationId}`,
-                    },
-                );
+                        },
+                        {
+                            jobId: `pr-comment-${owner}-${repo}-${prNumber}-${installationId}`,
+                        },
+                    );
 
-                await eventPublisher.publishStage(
-                    review.id,
-                    'COMMENT_POSTED',
-                    QUEUE_NAME,
-                    'Post Initial Comment',
-                    'success',
-                    'Posted initial processing comment to PR',
-                );
+                    await eventPublisher.publishStage(
+                        review.id,
+                        'COMMENT_POSTED',
+                        QUEUE_NAME,
+                        'Post Initial Comment',
+                        'success',
+                        'Posted initial processing comment to PR',
+                    );
+                }
 
                 logger.info({ owner, repo, prNumber }, 'Sent initial comment message to queue');
             }
@@ -420,9 +425,9 @@ async function startCommentWorker(): Promise<void> {
 
 async function startIssuesWorker(): Promise<void> {
     issuesWorker = createWorker(ISSUES_QUEUE, async (job) => {
-        const { owner, repo, prNumber, installationId, commitSha, issues, summary } = job.data as PRIssuesMessage;
+        const { owner, repo, prNumber, installationId, commitSha, issues, summary, isSynchronize } = job.data as PRIssuesMessage;
 
-        logger.info({ owner, repo, prNumber }, 'Processing pr-issues job');
+        logger.info({ owner, repo, prNumber, isSynchronize }, 'Processing pr-issues job');
 
         if (!installationId) {
             logger.error('No installationId provided in message');
@@ -437,8 +442,71 @@ async function startIssuesWorker(): Promise<void> {
             return;
         }
 
+        let botComments: any[] = [];
+        try {
+            const { data } = await octokit.rest.pulls.listReviewComments({
+                owner,
+                repo,
+                pull_number: prNumber,
+                per_page: 100,
+            });
+            botComments = data.filter((c) => c.user?.type === 'Bot' && c.body?.includes('**Suggestion:**'));
+        } catch (error) {
+            logger.error({ error, owner, repo, prNumber }, 'Failed to fetch existing review comments');
+        }
+
+        const resolvedNodeIds: string[] = [];
+        const issuesToPost: ReviewIssue[] = [];
+
+        if (isSynchronize) {
+            // Find issues that are no longer present
+            for (const comment of botComments) {
+                const stillExists = issues.some(
+                    (i) => i.file === comment.path && comment.body.includes(i.description.substring(0, 30)),
+                );
+
+                if (!stillExists && !comment.is_minimized) {
+                    resolvedNodeIds.push(comment.node_id);
+                }
+            }
+
+            // Find strictly new issues
+            for (const issue of issues) {
+                const alreadyPosted = botComments.some(
+                    (c) => c.path === issue.file && c.body.includes(issue.description.substring(0, 30)),
+                );
+
+                if (!alreadyPosted) {
+                    issuesToPost.push(issue);
+                }
+            }
+        } else {
+            issuesToPost.push(...issues);
+        }
+        
+
+        for (const nodeId of resolvedNodeIds) {
+            try {
+                await octokit.graphql(`
+                    mutation($input: MinimizeCommentInput!) {
+                        minimizeComment(input: $input) {
+                            clientMutationId
+                        }
+                    }
+                `, {
+                    input: {
+                        subjectId: nodeId,
+                        classifier: 'RESOLVED',
+                    },
+                });
+                logger.info({ nodeId }, 'Resolved old review comment');
+            } catch (error) {
+                logger.error({ error, nodeId }, 'Failed to resolve comment');
+            }
+        }
+
         const failedIssues: { issue: ReviewIssue; error: unknown }[] = [];
-        for (const issue of issues) {
+        for (const issue of issuesToPost) {
             try {
                 await postInlineComment(owner, repo, prNumber, commitSha, issue, octokit);
             } catch (error) {

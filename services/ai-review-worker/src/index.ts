@@ -26,6 +26,7 @@ interface AIReviewMessage {
     commitSha: string;
     checkRunId?: number;
     reviewId?: string;
+    isSynchronize?: boolean;
 }
 
 const aiReviewQueue = createQueue(QUEUE_NAME);
@@ -273,6 +274,7 @@ async function startWorker(): Promise<void> {
             commitSha,
             checkRunId,
             reviewId,
+            isSynchronize,
         } = reviewMessage;
 
         if (!installationId) {
@@ -376,12 +378,15 @@ async function startWorker(): Promise<void> {
                 installationId,
                 commitSha,
                 issues: issuesWithLines,
-                summary: summaryMessage,
+                summary: isSynchronize ? undefined : summaryMessage,
                 reviewId,
+                isSynchronize: !!isSynchronize,
             });
-            logger.info({ repoId, prNumber, issuesCount: issuesWithLines.length }, 'Sent issues and summary to queue');
+            logger.info({ repoId, prNumber, issuesCount: issuesWithLines.length, isSynchronize }, 'Sent issues and summary to queue');
 
-            updatePRDescription(owner, repo, prNumber, uniqueIssues, octokit);
+            if (!isSynchronize) {
+                updatePRDescription(owner, repo, prNumber, uniqueIssues, octokit);
+            }
 
             let issuesWithMetadata: IssueWithMetadata[] = [];
             try {

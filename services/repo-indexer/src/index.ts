@@ -38,6 +38,7 @@ interface PRContextMessage {
     installationId: string;
     checkRunId?: number;
     reviewId?: string;
+    isSynchronize?: boolean;
 }
 
 const repoIndexQueue = createQueue(QUEUE_NAME);
@@ -79,7 +80,7 @@ async function startContextWorker(): Promise<void> {
         const contextMessage = job.data as PRContextMessage;
         logger.info({ contextMessage }, 'Received pr-context event');
 
-        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha, installationId, checkRunId, reviewId } =
+        const { query, repoId, owner, repo, prNumber, userId, diff, commitSha, installationId, checkRunId, reviewId, isSynchronize } =
             contextMessage;
         logger.info({ query, repoId }, 'Retrieving context for PR');
 
@@ -124,6 +125,7 @@ async function startContextWorker(): Promise<void> {
                 installationId,
                 checkRunId,
                 reviewId,
+                isSynchronize: !!isSynchronize,
             });
             logger.info({ repoId, prNumber, checkRunId }, 'Sent AI review message to queue');
         } catch (error) {
