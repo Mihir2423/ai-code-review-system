@@ -223,7 +223,7 @@ router.post('/github', async (req, res) => {
         const repoName = repo?.name;
         const fullName = repo?.full_name;
 
-        if (owner && repoName && fullName && action === 'opened') {
+        if (owner && repoName && fullName && (action === 'opened' || action === 'synchronize')) {
             try {
                 const repository = await prisma.repository.findFirst({
                     where: { fullName },
@@ -240,9 +240,10 @@ router.post('/github', async (req, res) => {
                             prNumber: pr?.number,
                             userId: repository.userId,
                             installationId: repository.installation.installationId,
+                            isSynchronize: action === 'synchronize',
                         },
                         {
-                            jobId: `pr-review-${owner}-${repoName}-${pr?.number}-${action}`,
+                            jobId: `pr-review-${owner}-${repoName}-${pr?.number}-${pr?.head?.sha}`,
                         },
                     );
                     logger.info({ owner, repo: repoName, prNumber: pr?.number, action }, 'PR review queued');
