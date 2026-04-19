@@ -297,7 +297,7 @@ async function startPrReviewWorker(): Promise<void> {
                         isSynchronize: !!isSynchronize,
                     },
                     {
-                        jobId: `pr-context-${owner}-${repo}-${prNumber}-${userId}-${Date.now()}`,
+                        jobId: `pr-context-${owner}-${repo}-${prNumber}-${prData.commitSha}`,
                     },
                 );
 
@@ -524,7 +524,20 @@ async function startIssuesWorker(): Promise<void> {
 
         if (summary) {
             try {
-                await postComment(owner, repo, prNumber, summary, octokit);
+                const { data: existingComments } = await octokit.rest.issues.listComments({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    per_page: 100,
+                });
+                const hasSummary = existingComments.some(
+                    (c) => c.user?.type === 'Bot' && c.body?.includes('## Code Review Summary'),
+                );
+                if (!hasSummary) {
+                    await postComment(owner, repo, prNumber, summary, octokit);
+                } else {
+                    logger.info({ owner, repo, prNumber }, 'Summary comment already exists, skipping');
+                }
             } catch (error) {
                 logger.error({ error, owner, repo, prNumber }, 'Failed to post summary comment');
             }
