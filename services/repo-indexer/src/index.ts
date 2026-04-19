@@ -126,6 +126,8 @@ async function startContextWorker(): Promise<void> {
                 checkRunId,
                 reviewId,
                 isSynchronize: !!isSynchronize,
+            }, {
+                jobId: `pr-ai-review-${owner}-${repo}-${prNumber}-${commitSha}`,
             });
             logger.info({ repoId, prNumber, checkRunId }, 'Sent AI review message to queue');
         } catch (error) {

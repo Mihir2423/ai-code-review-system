@@ -381,6 +381,8 @@ async function startWorker(): Promise<void> {
                 summary: isSynchronize ? undefined : summaryMessage,
                 reviewId,
                 isSynchronize: !!isSynchronize,
+            }, {
+                jobId: `pr-issues-${owner}-${repo}-${prNumber}-${commitSha}`,
             });
             logger.info({ repoId, prNumber, issuesCount: issuesWithLines.length, isSynchronize }, 'Sent issues and summary to queue');
 

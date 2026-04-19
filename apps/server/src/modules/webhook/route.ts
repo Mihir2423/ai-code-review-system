@@ -243,7 +243,7 @@ router.post('/github', async (req, res) => {
                             isSynchronize: action === 'synchronize',
                         },
                         {
-                            jobId: `pr-review-${owner}-${repoName}-${pr?.number}-${action}-${Date.now()}`,
+                            jobId: `pr-review-${owner}-${repoName}-${pr?.number}-${pr?.head?.sha}`,
                         },
                     );
                     logger.info({ owner, repo: repoName, prNumber: pr?.number, action }, 'PR review queued');
